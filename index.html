@@ -53,7 +53,7 @@ th { background: #eee; }
 
 <h3>Field Map (Push Back)</h3>
 <div id="fieldContainer">
-  <img id="fieldImage" src="https://upload.wikimedia.org/wikipedia/commons/3/3f/VEX_Push_Back_Field.png">
+  <img id="fieldImage" src="https://upload.wikimedia.org/wikipedia/commons/3/3f/VEX_Push_Back_Field.png" alt="Push Back Field">
   <canvas id="fieldCanvas" width="600" height="600"></canvas>
 </div>
 <button onclick="clearPath()">Clear Path</button>
@@ -127,36 +127,39 @@ function stopSection(){
   currentRun[idx] = {time: elapsed, speed: sections[idx].distance / elapsed};
   startTime = null;
   document.getElementById("timerDisplay").innerText = "Time: 0.00 s";
+  saveRun();
   renderTable();
-  saveRunIfComplete();
 }
 
 // ---------------------------
-// Save run
+// Save Run
 // ---------------------------
-function saveRunIfComplete(){
-  if(Object.keys(currentRun).length === sections.length){
-    const mode = document.getElementById("mode").value;
-    runs[mode] = runs[mode] || [];
-    let runArray = [];
-    for(let i=0;i<sections.length;i++){
-      runArray.push(currentRun[i]);
-    }
-    runs[mode].push(runArray);
-    localStorage.setItem("runs", JSON.stringify(runs));
-    currentRun = {};
-  }
-}
-
-// ---------------------------
-// Delete section recording
-// ---------------------------
-function deleteSectionRecording(sectionIndex){
+function saveRun(){
   const mode = document.getElementById("mode").value;
-  const lastRun = (runs[mode]||[]).slice(-1)[0];
-  if(lastRun){
-    lastRun[sectionIndex] = null; // delete that section
-    runs[mode][runs[mode].length-1] = lastRun;
+  runs[mode] = runs[mode] || [];
+  
+  // Create a new run if empty or previous run is complete
+  let lastRun = runs[mode].slice(-1)[0];
+  if(!lastRun || Object.keys(lastRun).length === sections.length){
+    lastRun = {};
+    runs[mode].push(lastRun);
+  }
+  
+  // Update current section
+  const idx = document.getElementById("sectionSelect").value;
+  lastRun[idx] = currentRun[idx];
+  
+  localStorage.setItem("runs", JSON.stringify(runs));
+}
+
+// ---------------------------
+// Delete Section
+// ---------------------------
+function deleteSectionRecording(idx){
+  const mode = document.getElementById("mode").value;
+  const lastRun = runs[mode]?.slice(-1)[0];
+  if(lastRun && lastRun[idx]){
+    delete lastRun[idx];
     localStorage.setItem("runs", JSON.stringify(runs));
     renderTable();
   }
@@ -192,17 +195,14 @@ function renderTable(){
     row.insertCell().innerText = s ? s.time.toFixed(2) : "-";
     let delta = s ? s.time - best[i] : 0;
     row.insertCell().innerText = s ? delta.toFixed(2) : "-";
-    row.insertCell().innerText = s && i>0 ? Math.max(0, s.time - lastRun[i-1].time).toFixed(2) : "-";
-    row.insertCell().innerText = s && i>0 ? Math.max(0, lastRun[i-1].time - s.time).toFixed(2) : "-";
+    row.insertCell().innerText = s && i>0 ? Math.max(0, s.time - lastRun[i-1]?.time || 0).toFixed(2) : "-";
+    row.insertCell().innerText = s && i>0 ? Math.max(0, lastRun[i-1]?.time - s.time || 0).toFixed(2) : "-";
     row.insertCell().innerText = s ? s.speed.toFixed(2) : "-";
     row.cells[2].className = (s && delta<=0)?"good":(s?"bad":"");
+    
     // Delete button
     let del = row.insertCell();
-    if(s){
-      del.innerHTML = `<span class="deleteBtn" onclick="deleteSectionRecording(${i})">✖</span>`;
-    } else {
-      del.innerHTML = "-";
-    }
+    del.innerHTML = s ? `<span class="deleteBtn" onclick="deleteSectionRecording(${i})">✖</span>` : "-";
   });
 }
 
