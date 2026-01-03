@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>VEX Push Back Dashboard</title>
+<title>Push Back Dashboard</title>
 <style>
 body { font-family: Arial; padding: 20px; }
 input, button, select { margin: 4px; padding: 4px; }
@@ -12,12 +12,14 @@ th { background: #eee; }
 .good { background: #c8f7c5; }
 .bad { background: #f7c5c5; }
 canvas { border:1px solid #000; margin-top:20px; display:block; }
-#graph { margin-top:20px; }
+#fieldContainer { position: relative; width: 600px; height: 600px; }
+#fieldImage { width: 100%; height: 100%; }
+#fieldCanvas { position: absolute; top:0; left:0; }
 </style>
 </head>
 <body>
 
-<h2>VEX Push Back Dashboard</h2>
+<h2>Push Back VEX Dashboard</h2>
 
 <label>Mode: </label>
 <select id="mode" onchange="loadData()">
@@ -41,15 +43,20 @@ canvas { border:1px solid #000; margin-top:20px; display:block; }
 <hr>
 
 <table id="table">
-<tr><th>Run</th></tr>
+<tr><th>Section</th></tr>
 </table>
 
-<canvas id="fieldMap" width="600" height="600"></canvas>
-<canvas id="graph" width="600" height="200"></canvas>
+<h3>Field Map (Push Back)</h3>
+<div id="fieldContainer">
+  <!-- Replace the src with an actual Push Back field image URL -->
+  <img id="fieldImage" src="https://i.imgur.com/OZ6hZgQ.png">
+  <canvas id="fieldCanvas" width="600" height="600"></canvas>
+</div>
+<button onclick="clearPath()">Clear Path</button>
 
 <script>
 // -------------------------
-// Sections
+// Section & Run Data
 // -------------------------
 let sections = JSON.parse(localStorage.getItem("sections")) || [
   {name:"Start", distance:1},
@@ -61,8 +68,12 @@ let sections = JSON.parse(localStorage.getItem("sections")) || [
 let runs = JSON.parse(localStorage.getItem("runs")) || {};
 let startTime = null;
 let interval = null;
-let liveTimes = [];
+let sectionTimes = [];
+let path = JSON.parse(localStorage.getItem("path")) || [];
 
+// -------------------------
+// Sections UI
+// -------------------------
 function saveSections() {
   localStorage.setItem("sections", JSON.stringify(sections));
   renderSections();
@@ -79,41 +90,37 @@ function renderSections() {
   sections.forEach((s,i)=>{
     div.innerHTML += `
       Name: <input value="${s.name}" onchange="sections[${i}].name=this.value;saveSections()">
-      Distance: <input type="number" step="0.01" value="${s.distance}" onchange="sections[${i}].distance=this.value;saveSections()">
+      Distance: <input type="number" step="0.01" value="${s.distance}" onchange="sections[${i}].distance=parseFloat(this.value);saveSections()">
       <br>`;
   });
 }
 
 // -------------------------
-// Run control
+// Run Control
 // -------------------------
 function startRun() {
   startTime = performance.now();
-  liveTimes = [];
+  sectionTimes = [];
   interval = setInterval(()=>{
-    let elapsed = (performance.now()-startTime)/1000;
+    let elapsed = (performance.now() - startTime)/1000;
     document.getElementById("timer").innerText = "Time: " + elapsed.toFixed(2) + " s";
-
-    // simulate live section times
-    let sectionTime = elapsed / sections.length;
-    liveTimes = Array(sections.length).fill(sectionTime);
-    drawSpeedGraph(liveTimes.map((t,i)=>sections[i].distance / t));
   },50);
 }
 
 function stopRun() {
   clearInterval(interval);
-  const totalTime = (performance.now()-startTime)/1000;
+  const totalTime = (performance.now() - startTime)/1000;
   recordRun(totalTime);
 }
 
 // -------------------------
-// Record run
+// Record Run
 // -------------------------
 function recordRun(totalTime) {
   const mode = document.getElementById("mode").value;
   runs[mode] = runs[mode] || [];
 
+  // evenly split time for demo purposes
   let runData = sections.map(s => {
     let t = totalTime / sections.length;
     return {time: t, speed: s.distance / t};
@@ -122,132 +129,85 @@ function recordRun(totalTime) {
   runs[mode].push(runData);
   localStorage.setItem("runs", JSON.stringify(runs));
   renderTable();
-  drawFieldMap();
-  drawSpeedGraph(runData.map(r=>r.speed));
+  drawPath();
 }
 
 // -------------------------
-// Load data
+// Load Data
 // -------------------------
 function loadData() {
   runs = JSON.parse(localStorage.getItem("runs")) || {};
   renderTable();
-  drawFieldMap();
+  drawPath();
 }
 
 // -------------------------
-// Table rendering
+// Table Rendering
 // -------------------------
 function renderTable() {
   const mode = document.getElementById("mode").value;
   const table = document.getElementById("table");
-  table.innerHTML = "<tr><th>Run</th>";
-  sections.forEach(s => table.innerHTML += `<th>${s.name}<br>(t / s)</th>`);
-  table.innerHTML += "<th>Total</th></tr>";
+  table.innerHTML = "<tr><th>Section</th><th>Current</th><th>Delta vs Best</th><th>Increase</th><th>Decrease</th><th>Speed</th></tr>";
 
   let best = sections.map(()=>Infinity);
 
   (runs[mode]||[]).forEach(run => run.forEach((s,i)=>best[i]=Math.min(best[i],s.time)));
 
-  (runs[mode]||[]).forEach((run,i)=>{
-    let row = table.insertRow();
-    row.insertCell().innerText = i+1;
-    let total = 0;
-    run.forEach((s,j)=>{
-      total += s.time;
-      let delta = s.time - best[j];
-      let cell = row.insertCell();
-      cell.className = delta<=0?"good":"bad";
-      cell.innerText = s.time.toFixed(2) + " / " + s.speed.toFixed(2);
+  (runs[mode]||[]).forEach((run,index)=>{
+    run.forEach((s,i)=>{
+      let row = table.insertRow();
+      row.insertCell().innerText = s.name || sections[i].name;
+      row.insertCell().innerText = s.time.toFixed(2);
+      let delta = s.time - best[i];
+      row.insertCell().innerText = delta.toFixed(2);
+      row.insertCell().innerText = i>0 ? Math.max(0,s.time - run[i-1].time).toFixed(2) : "-";
+      row.insertCell().innerText = i>0 ? Math.max(0,run[i-1].time - s.time).toFixed(2) : "-";
+      row.insertCell().innerText = s.speed.toFixed(2);
+      row.cells[2].className = delta<=0?"good":"bad";
     });
-    row.insertCell().innerText = total.toFixed(2);
   });
 }
 
 // -------------------------
-// Field Map
+// Field Path Drawing
 // -------------------------
-function drawFieldMap() {
-  const canvas = document.getElementById("fieldMap");
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+const canvas = document.getElementById("fieldCanvas");
+const ctx = canvas.getContext("2d");
+let drawing = false;
 
-  ctx.fillStyle = "#f0f0f0";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.strokeStyle="#000";
-  ctx.lineWidth=2;
-  ctx.strokeRect(20,20,560,560);
+canvas.addEventListener("mousedown", e=>{ drawing=true; addPoint(e); });
+canvas.addEventListener("mousemove", e=>{ if(drawing) addPoint(e); });
+canvas.addEventListener("mouseup", e=>{ drawing=false; savePath(); });
+canvas.addEventListener("mouseleave", e=>{ drawing=false; savePath(); });
 
-  const mode = document.getElementById("mode").value;
-  const runData = (runs[mode]||[]).slice(-1)[0];
-  if(!runData) return;
-
-  // sample curved points
-  let points = [
-    {x:50,y:550}, {x:200,y:450}, {x:400,y:400}, {x:550,y:550}
-  ];
-  if(sections.length != points.length){
-    points = [];
-    for(let i=0;i<sections.length;i++){
-      let ratio = i/(sections.length-1);
-      points.push({x:50+ratio*500, y:550 - ratio*150});
-    }
-  }
-
-  for(let i=0;i<points.length-1;i++){
-    const s = runData[i];
-    const color = s.time <= Math.min(...runData.map(r=>r.time)) ? "green" : "red";
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(points[i].x, points[i].y);
-    const cx = (points[i].x + points[i+1].x)/2;
-    const cy = points[i].y;
-    ctx.quadraticCurveTo(cx,cy,points[i+1].x,points[i+1].y);
-    ctx.stroke();
-  }
-
-  points.forEach((p,i)=>{
-    ctx.fillStyle="black";
-    ctx.beginPath();
-    ctx.arc(p.x,p.y,5,0,2*Math.PI);
-    ctx.fill();
-    ctx.fillText(sections[i].name,p.x+5,p.y-5);
-  });
+function addPoint(e){
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  path.push({x,y});
+  drawPath();
 }
 
-// -------------------------
-// Speed Graph
-// -------------------------
-function drawSpeedGraph(speeds) {
-  const canvas = document.getElementById("graph");
-  const ctx = canvas.getContext("2d");
+function drawPath(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  if(!speeds || speeds.length===0) return;
-
-  const maxSpeed = Math.max(...speeds)*1.2;
-  const widthPerSection = canvas.width / speeds.length;
-
-  ctx.beginPath();
-  ctx.moveTo(0,canvas.height - (speeds[0]/maxSpeed)*canvas.height);
-  for(let i=0;i<speeds.length;i++){
-    let x = i*widthPerSection + widthPerSection/2;
-    let y = canvas.height - (speeds[i]/maxSpeed)*canvas.height;
-    ctx.lineTo(x,y);
-  }
   ctx.strokeStyle="blue";
-  ctx.lineWidth=2;
+  ctx.lineWidth=3;
+  ctx.beginPath();
+  path.forEach((p,i)=>{
+    if(i===0) ctx.moveTo(p.x,p.y);
+    else ctx.lineTo(p.x,p.y);
+  });
   ctx.stroke();
+}
 
-  for(let i=0;i<speeds.length;i++){
-    let x = i*widthPerSection + widthPerSection/2;
-    let y = canvas.height - (speeds[i]/maxSpeed)*canvas.height;
-    ctx.fillStyle="red";
-    ctx.beginPath();
-    ctx.arc(x,y,4,0,2*Math.PI);
-    ctx.fill();
-    ctx.fillText(speeds[i].toFixed(2),x-10,y-10);
-  }
+function clearPath(){
+  path=[];
+  drawPath();
+  localStorage.setItem("path",JSON.stringify(path));
+}
+
+function savePath(){
+  localStorage.setItem("path",JSON.stringify(path));
 }
 
 // -------------------------
