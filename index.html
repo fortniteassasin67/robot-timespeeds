@@ -28,7 +28,6 @@ canvas { border:1px solid #000; margin-top:20px; display:block; }
 <hr>
 
 <h3>Sections</h3>
-<p>Name sections and set distance (meters/tiles).</p>
 <div id="sections"></div>
 <button onclick="addSection()">Add Section</button>
 
@@ -50,12 +49,13 @@ canvas { border:1px solid #000; margin-top:20px; display:block; }
 
 <script>
 // -------------------------
-// Section & Run Data
+// Sections
 // -------------------------
 let sections = JSON.parse(localStorage.getItem("sections")) || [
-  {name:"S1", distance:1},
-  {name:"S2", distance:1},
-  {name:"S3", distance:1}
+  {name:"Start", distance:1},
+  {name:"Approach Wall", distance:1},
+  {name:"Push Block", distance:1},
+  {name:"Return", distance:1}
 ];
 
 let runs = JSON.parse(localStorage.getItem("runs")) || {};
@@ -63,9 +63,6 @@ let startTime = null;
 let interval = null;
 let liveTimes = [];
 
-// -------------------------
-// Sections UI
-// -------------------------
 function saveSections() {
   localStorage.setItem("sections", JSON.stringify(sections));
   renderSections();
@@ -88,7 +85,7 @@ function renderSections() {
 }
 
 // -------------------------
-// Run Control
+// Run control
 // -------------------------
 function startRun() {
   startTime = performance.now();
@@ -97,10 +94,10 @@ function startRun() {
     let elapsed = (performance.now()-startTime)/1000;
     document.getElementById("timer").innerText = "Time: " + elapsed.toFixed(2) + " s";
 
-    // simulate live section times evenly for demo purposes
+    // simulate live section times
     let sectionTime = elapsed / sections.length;
     liveTimes = Array(sections.length).fill(sectionTime);
-    drawSpeedGraph(liveTimes);
+    drawSpeedGraph(liveTimes.map((t,i)=>sections[i].distance / t));
   },50);
 }
 
@@ -111,7 +108,7 @@ function stopRun() {
 }
 
 // -------------------------
-// Record Run
+// Record run
 // -------------------------
 function recordRun(totalTime) {
   const mode = document.getElementById("mode").value;
@@ -130,7 +127,7 @@ function recordRun(totalTime) {
 }
 
 // -------------------------
-// Load Data
+// Load data
 // -------------------------
 function loadData() {
   runs = JSON.parse(localStorage.getItem("runs")) || {};
@@ -139,7 +136,7 @@ function loadData() {
 }
 
 // -------------------------
-// Table Rendering
+// Table rendering
 // -------------------------
 function renderTable() {
   const mode = document.getElementById("mode").value;
@@ -168,34 +165,27 @@ function renderTable() {
 }
 
 // -------------------------
-// Field Map Drawing
+// Field Map
 // -------------------------
 function drawFieldMap() {
   const canvas = document.getElementById("fieldMap");
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Field background
   ctx.fillStyle = "#f0f0f0";
   ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  // Field boundary
   ctx.strokeStyle="#000";
   ctx.lineWidth=2;
   ctx.strokeRect(20,20,560,560);
 
   const mode = document.getElementById("mode").value;
-  const runData = (runs[mode]||[]).slice(-1)[0]; // last run
+  const runData = (runs[mode]||[]).slice(-1)[0];
   if(!runData) return;
 
-  // Predefined curved points
+  // sample curved points
   let points = [
-    {x:50,y:550}, 
-    {x:200,y:450},
-    {x:400,y:400},
-    {x:550,y:550}
+    {x:50,y:550}, {x:200,y:450}, {x:400,y:400}, {x:550,y:550}
   ];
-
   if(sections.length != points.length){
     points = [];
     for(let i=0;i<sections.length;i++){
@@ -204,13 +194,11 @@ function drawFieldMap() {
     }
   }
 
-  // Draw curved sections
   for(let i=0;i<points.length-1;i++){
     const s = runData[i];
     const color = s.time <= Math.min(...runData.map(r=>r.time)) ? "green" : "red";
     ctx.strokeStyle = color;
     ctx.lineWidth = 6;
-
     ctx.beginPath();
     ctx.moveTo(points[i].x, points[i].y);
     const cx = (points[i].x + points[i+1].x)/2;
@@ -219,7 +207,6 @@ function drawFieldMap() {
     ctx.stroke();
   }
 
-  // Section points
   points.forEach((p,i)=>{
     ctx.fillStyle="black";
     ctx.beginPath();
@@ -230,13 +217,12 @@ function drawFieldMap() {
 }
 
 // -------------------------
-// Live Speed Graph
+// Speed Graph
 // -------------------------
 function drawSpeedGraph(speeds) {
   const canvas = document.getElementById("graph");
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0,0,canvas.width,canvas.height);
-
   if(!speeds || speeds.length===0) return;
 
   const maxSpeed = Math.max(...speeds)*1.2;
@@ -244,18 +230,15 @@ function drawSpeedGraph(speeds) {
 
   ctx.beginPath();
   ctx.moveTo(0,canvas.height - (speeds[0]/maxSpeed)*canvas.height);
-
   for(let i=0;i<speeds.length;i++){
     let x = i*widthPerSection + widthPerSection/2;
     let y = canvas.height - (speeds[i]/maxSpeed)*canvas.height;
     ctx.lineTo(x,y);
   }
-
   ctx.strokeStyle="blue";
   ctx.lineWidth=2;
   ctx.stroke();
 
-  // Draw speed points
   for(let i=0;i<speeds.length;i++){
     let x = i*widthPerSection + widthPerSection/2;
     let y = canvas.height - (speeds[i]/maxSpeed)*canvas.height;
@@ -265,18 +248,10 @@ function drawSpeedGraph(speeds) {
     ctx.fill();
     ctx.fillText(speeds[i].toFixed(2),x-10,y-10);
   }
-
-  // Axis
-  ctx.strokeStyle="black";
-  ctx.lineWidth=1;
-  ctx.beginPath();
-  ctx.moveTo(0,canvas.height);
-  ctx.lineTo(canvas.width,canvas.height);
-  ctx.stroke();
 }
 
 // -------------------------
-// Initial Render
+// Init
 // -------------------------
 renderSections();
 loadData();
