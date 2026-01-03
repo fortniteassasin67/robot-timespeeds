@@ -13,7 +13,7 @@ th { background: #eee; }
 .bad { background: #f7c5c5; }
 .deleteBtn { cursor: pointer; color: red; font-weight: bold; }
 #fieldContainer { position: relative; width: 600px; height: 600px; margin-top: 20px; }
-#fieldImage { width: 100%; height: 100%; display:block; }
+#fieldImage { width: 100%; height: 100%; display:block; object-fit: contain; }
 #fieldCanvas { position: absolute; top:0; left:0; }
 </style>
 </head>
@@ -46,14 +46,20 @@ th { background: #eee; }
 
 <table id="table">
 <tr>
-<th>Section</th><th>Current</th><th>Delta vs Best</th>
-<th>Increase</th><th>Decrease</th><th>Speed</th><th>Delete</th>
+<th>Section</th>
+<th>Current</th>
+<th>Best</th>
+<th>Delta vs Best</th>
+<th>Increase</th>
+<th>Decrease</th>
+<th>Speed</th>
+<th>Delete</th>
 </tr>
 </table>
 
 <h3>Field Map (Push Back)</h3>
 <div id="fieldContainer">
-  <img id="fieldImage" src="https://upload.wikimedia.org/wikipedia/commons/3/3f/VEX_Push_Back_Field.png" alt="Push Back Field">
+  <img id="fieldImage" src="https://upload.wikimedia.org/wikipedia/commons/3/36/VEX_Push_Back_Field_2025.png" alt="Push Back Field">
   <canvas id="fieldCanvas" width="600" height="600"></canvas>
 </div>
 <button onclick="clearPath()">Clear Path</button>
@@ -181,7 +187,7 @@ function loadData(){
 function renderTable(){
   const mode = document.getElementById("mode").value;
   const table = document.getElementById("table");
-  table.innerHTML = "<tr><th>Section</th><th>Current</th><th>Delta vs Best</th><th>Increase</th><th>Decrease</th><th>Speed</th><th>Delete</th></tr>";
+  table.innerHTML = "<tr><th>Section</th><th>Current</th><th>Best</th><th>Delta vs Best</th><th>Increase</th><th>Decrease</th><th>Speed</th><th>Delete</th></tr>";
 
   let best = sections.map(()=>Infinity);
   (runs[mode]||[]).forEach(run => run.forEach((s,i)=>{if(s)best[i] = Math.min(best[i], s.time)}));
@@ -193,13 +199,14 @@ function renderTable(){
     let row = table.insertRow();
     row.insertCell().innerText = sections[i].name;
     row.insertCell().innerText = s ? s.time.toFixed(2) : "-";
+    row.insertCell().innerText = best[i] !== Infinity ? best[i].toFixed(2) : "-"; // Best column
     let delta = s ? s.time - best[i] : 0;
     row.insertCell().innerText = s ? delta.toFixed(2) : "-";
     row.insertCell().innerText = s && i>0 ? Math.max(0, s.time - lastRun[i-1]?.time || 0).toFixed(2) : "-";
     row.insertCell().innerText = s && i>0 ? Math.max(0, lastRun[i-1]?.time - s.time || 0).toFixed(2) : "-";
     row.insertCell().innerText = s ? s.speed.toFixed(2) : "-";
-    row.cells[2].className = (s && delta<=0)?"good":(s?"bad":"");
-    
+    row.cells[3].className = (s && delta<=0)?"good":(s?"bad":"");
+
     // Delete button
     let del = row.insertCell();
     del.innerHTML = s ? `<span class="deleteBtn" onclick="deleteSectionRecording(${i})">✖</span>` : "-";
