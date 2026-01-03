@@ -36,8 +36,10 @@ canvas { border:1px solid #000; margin-top:20px; display:block; }
 <hr>
 
 <h3>Run Control</h3>
-<button onclick="startRun()">Start</button>
-<button onclick="stopRun()">Stop</button>
+<p>Current Section: <span id="currentSection">None</span></p>
+<button onclick="startSection()">Start Section</button>
+<button onclick="stopSection()">Stop Section</button>
+
 <p id="timer">Time: 0.00 s</p>
 
 <hr>
@@ -48,8 +50,7 @@ canvas { border:1px solid #000; margin-top:20px; display:block; }
 
 <h3>Field Map (Push Back)</h3>
 <div id="fieldContainer">
-  <!-- Replace the src with an actual Push Back field image URL -->
-  <img id="fieldImage" src="https://i.imgur.com/OZ6hZgQ.png">
+  <img id="fieldImage" src="https://upload.wikimedia.org/wikipedia/commons/2/28/VEX_Push_Back_Field.webp">
   <canvas id="fieldCanvas" width="600" height="600"></canvas>
 </div>
 <button onclick="clearPath()">Clear Path</button>
@@ -68,7 +69,8 @@ let sections = JSON.parse(localStorage.getItem("sections")) || [
 let runs = JSON.parse(localStorage.getItem("runs")) || {};
 let startTime = null;
 let interval = null;
-let sectionTimes = [];
+let currentSectionIndex = 0;
+let currentRun = [];
 let path = JSON.parse(localStorage.getItem("path")) || [];
 
 // -------------------------
@@ -96,40 +98,50 @@ function renderSections() {
 }
 
 // -------------------------
-// Run Control
+// Section Timing
 // -------------------------
-function startRun() {
+function startSection() {
+  if(currentSectionIndex >= sections.length){
+    alert("All sections completed! Reset to start new run.");
+    return;
+  }
   startTime = performance.now();
-  sectionTimes = [];
   interval = setInterval(()=>{
-    let elapsed = (performance.now() - startTime)/1000;
+    let elapsed = (performance.now()-startTime)/1000;
     document.getElementById("timer").innerText = "Time: " + elapsed.toFixed(2) + " s";
+    document.getElementById("currentSection").innerText = sections[currentSectionIndex].name;
   },50);
 }
 
-function stopRun() {
+function stopSection() {
+  if(startTime === null){
+    alert("Start the section first!");
+    return;
+  }
   clearInterval(interval);
-  const totalTime = (performance.now() - startTime)/1000;
-  recordRun(totalTime);
+  let sectionTime = (performance.now() - startTime)/1000;
+  let s = sections[currentSectionIndex];
+  currentRun.push({name:s.name, time:sectionTime, speed: s.distance/sectionTime});
+  currentSectionIndex++;
+  startTime = null;
+  document.getElementById("timer").innerText = "Time: 0.00 s";
+  document.getElementById("currentSection").innerText = currentSectionIndex<sections.length?sections[currentSectionIndex].name:"All sections done!";
+  if(currentSectionIndex >= sections.length){
+    saveRun();
+  }
 }
 
 // -------------------------
-// Record Run
+// Save full run
 // -------------------------
-function recordRun(totalTime) {
+function saveRun(){
   const mode = document.getElementById("mode").value;
   runs[mode] = runs[mode] || [];
-
-  // evenly split time for demo purposes
-  let runData = sections.map(s => {
-    let t = totalTime / sections.length;
-    return {time: t, speed: s.distance / t};
-  });
-
-  runs[mode].push(runData);
+  runs[mode].push(currentRun);
   localStorage.setItem("runs", JSON.stringify(runs));
+  currentRun = [];
+  currentSectionIndex = 0;
   renderTable();
-  drawPath();
 }
 
 // -------------------------
@@ -150,21 +162,21 @@ function renderTable() {
   table.innerHTML = "<tr><th>Section</th><th>Current</th><th>Delta vs Best</th><th>Increase</th><th>Decrease</th><th>Speed</th></tr>";
 
   let best = sections.map(()=>Infinity);
-
   (runs[mode]||[]).forEach(run => run.forEach((s,i)=>best[i]=Math.min(best[i],s.time)));
 
-  (runs[mode]||[]).forEach((run,index)=>{
-    run.forEach((s,i)=>{
-      let row = table.insertRow();
-      row.insertCell().innerText = s.name || sections[i].name;
-      row.insertCell().innerText = s.time.toFixed(2);
-      let delta = s.time - best[i];
-      row.insertCell().innerText = delta.toFixed(2);
-      row.insertCell().innerText = i>0 ? Math.max(0,s.time - run[i-1].time).toFixed(2) : "-";
-      row.insertCell().innerText = i>0 ? Math.max(0,run[i-1].time - s.time).toFixed(2) : "-";
-      row.insertCell().innerText = s.speed.toFixed(2);
-      row.cells[2].className = delta<=0?"good":"bad";
-    });
+  const lastRun = (runs[mode]||[]).slice(-1)[0];
+  if(!lastRun) return;
+
+  lastRun.forEach((s,i)=>{
+    let row = table.insertRow();
+    row.insertCell().innerText = s.name;
+    row.insertCell().innerText = s.time.toFixed(2);
+    let delta = s.time - best[i];
+    row.insertCell().innerText = delta.toFixed(2);
+    row.insertCell().innerText = i>0 ? Math.max(0,s.time - lastRun[i-1].time).toFixed(2) : "-";
+    row.insertCell().innerText = i>0 ? Math.max(0,lastRun[i-1].time - s.time).toFixed(2) : "-";
+    row.insertCell().innerText = s.speed.toFixed(2);
+    row.cells[2].className = delta<=0?"good":"bad";
   });
 }
 
