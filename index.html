@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>VEX Push Back Dashboard</title>
+<style>
+body { font-family: Arial; padding: 20px; }
+input, button, select { margin: 4px; padding: 4px; }
+table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+th { background: #eee; }
+.good { background: #c8f7c5; }
+.bad { background: #f7c5c5; }
+canvas { border:1px solid #000; margin-top:20px; }
+</style>
+</head>
+<body>
+
+<h2>VEX Push Back Dashboard</h2>
+
+<label>Mode: </label>
+<select id="mode" onchange="loadData()">
+  <option value="driver">Driver</option>
+  <option value="auton">Auton</option>
+</select>
+
+<hr>
+
+<h3>Sections</h3>
+<p>Name sections and set distance (meters/tiles).</p>
+<div id="sections"></div>
+<button onclick="addSection()">Add Section</button>
+
+<hr>
+
+<h3>Run Control</h3>
+<button onclick="startRun()">Start</button>
+<button onclick="stopRun()">Stop</button>
+<p id="timer">Time: 0.00 s</p>
+
+<hr>
+
+<table id="table">
+<tr><th>Run</th></tr>
+</table>
+
+<canvas id="fieldMap" width="600" height="600"></canvas>
+
+<script>
+let sections = JSON.parse(localStorage.getItem("sections")) || [
+  {name:"S1", distance:1},
+  {name:"S2", distance:1},
+  {name:"S3", distance:1}
+];
+
+let runs = JSON.parse(localStorage.getItem("runs")) || {};
+let startTime = null;
+let interval = null;
+
+function saveSections() {
+  localStorage.setItem("sections", JSON.stringify(sections));
+  renderSections();
+}
+
+function addSection() {
+  sections.push({name:"S"+(sections.length+1), distance:1});
+  saveSections();
+}
+
+function renderSections() {
+  const div = document.getElementById("sections");
+  div.innerHTML = "";
+  sections.forEach((s,i)=>{
+    div.innerHTML += `
+      Name: <input value="${s.name}" onchange="sections[${i}].name=this.value;saveSections()">
+      Distance: <input type="number" step="0.01" value="${s.distance}" onchange="sections[${i}].distance=this.value;saveSections()">
+      <br>`;
+  });
+}
+
+function startRun() {
+  startTime = performance.now();
+  interval = setInterval(()=>{
+    document.getElementById("timer").innerText =
+      "Time: " + ((performance.now()-startTime)/1000).toFixed(2) + " s";
+  },50);
+}
+
+function stopRun() {
+  clearInterval(interval);
+  const totalTime = (performance.now()-startTime)/1000;
+  recordRun(totalTime);
+}
+
+function recordRun(totalTime) {
+  const mode = document.getElementById("mode").value;
+  runs[mode] = runs[mode] || [];
+
+  // divide time evenly per section (for simplicity)
+  let runData = sections.map(s => ({
+    time: totalTime / sections.length,
+    speed: s.distance / (totalTime / sections.length)
+  }));
+
+  runs[mode].push(runData);
+  localStorage.setItem("runs", JSON.stringify(runs));
+  renderTable();
+  drawFieldMap();
+}
+
+function loadData() {
+  runs = JSON.parse(localStorage.getItem("runs")) || {};
+  renderTable();
+  drawFieldMap();
+}
+
+function renderTable() {
+  const mode = document.getElementById("mode").value;
+  const table = document.getElementById("table");
+  table.innerHTML = "<tr><th>Run</th>";
+  sections.forEach(s => table.innerHTML += `<th>${s.name}<br>(t/s)</th>`);
+  table.innerHTML += "<th>Total</th></tr>";
+
+  let best = sections.map(()=>Infinity);
+
+  (runs[mode]||[]).forEach(run => run.forEach((s,i)=>best[i]=Math.min(best[i],s.time)));
+
+  (runs[mode]||[]).forEach((run,i)=>{
+    let row = table.insertRow();
+    row.insertCell().innerText = i+1;
+    let total = 0;
+    run.forEach((s,j)=>{
+      total += s.time;
+      let delta = s.time - best[j];
+      let cell = row.insertCell();
+      cell.className = delta<=0?"good":"bad";
+      cell.innerText = s.time.toFixed(2) + " / " + s.speed.toFixed(2);
+    });
+    row.insertCell().innerText = total.toFixed(2);
+  });
+}
+
+function drawFieldMap() {
+  const canvas = document.getElementById("fieldMap");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Draw simplified Push Back field
+  ctx.fillStyle = "#f0f0f0";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // field walls (example)
+  ctx.strokeStyle="#000";
+  ctx.lineWidth=2;
+  ctx.strokeRect(20,20,560,560);
+
+  const mode = document.getElementById("mode").value;
+  const runData = (runs[mode]||[]).slice(-1)[0]; // last run
+
+  if(!runData) return;
+
+  // Predefined curved path points for realistic Push Back path
+  let points = [
+    {x:50,y:550}, // Start
+    {x:200,y:450}, // Curve to wall
+    {x:400,y:400}, // Push block
+    {x:550,y:550}  // Return
+  ];
+
+  // adjust points if number of sections != points.length
+  if(sections.length != points.length){
+    points = [];
+    for(let i=0;i<sections.length;i++){
+      let ratio = i/(sections.length-1);
+      points.push({x:50+ratio*500, y:550 - ratio*150});
+    }
+  }
+
+  // draw sections as curves with color
+  for(let i=0;i<points.length-1;i++){
+    const s = runData[i];
+    const color = s.time <= Math.min(...runData.map(r=>r.time)) ? "green" : "red";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 6;
+
+    // quadratic curve for more realistic path
+    ctx.beginPath();
+    ctx.moveTo(points[i].x, points[i].y);
+    const cx = (points[i].x + points[i+1].x)/2;
+    const cy = points[i].y;
+    ctx.quadraticCurveTo(cx,cy,points[i+1].x,points[i+1].y);
+    ctx.stroke();
+  }
+
+  // mark points
+  points.forEach((p,i)=>{
+    ctx.fillStyle="black";
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,5,0,2*Math.PI);
+    ctx.fill();
+    ctx.fillText(sections[i].name,p.x+5,p.y-5);
+  });
+}
+
+// Initial render
+renderSections();
+loadData();
+</script>
+
+</body>
+</html>
