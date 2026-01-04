@@ -6,7 +6,7 @@
 
 <style>
 body { font-family: Arial, sans-serif; padding: 20px; }
-button, select { padding: 6px; margin: 4px; }
+button, select, input { padding: 6px; margin: 4px; }
 
 table {
   border-collapse: collapse;
@@ -35,12 +35,14 @@ th { background: #eee; }
   width: 100%;
   height: 100%;
   display: block;
+  pointer-events: none; /* IMPORTANT */
 }
 
 #fieldCanvas {
   position: absolute;
   top: 0;
   left: 0;
+  cursor: crosshair;
 }
 </style>
 </head>
@@ -49,8 +51,19 @@ th { background: #eee; }
 
 <h2>VEX Push Back Practice</h2>
 
+<h3>Section Setup</h3>
+<table>
+<thead>
+<tr><th>Name</th><th>Distance</th><th>Delete</th></tr>
+</thead>
+<tbody id="sectionTable"></tbody>
+</table>
+<button onclick="addSection()">Add Section</button>
+
+<hr>
+
 <label>Mode:</label>
-<select id="mode" onchange="renderTable()">
+<select id="mode" onchange="renderResults()">
   <option value="driver">Driver</option>
   <option value="auton">Auton</option>
 </select>
@@ -65,6 +78,7 @@ th { background: #eee; }
 
 <p id="timer">Time: 0.00 s</p>
 
+<h3>Results</h3>
 <table>
 <thead>
 <tr>
@@ -76,7 +90,7 @@ th { background: #eee; }
   <th>Delete</th>
 </tr>
 </thead>
-<tbody id="tableBody"></tbody>
+<tbody id="resultsTable"></tbody>
 </table>
 
 <h3>Field Map</h3>
@@ -84,131 +98,153 @@ th { background: #eee; }
   <img id="fieldImage" src="field.png">
   <canvas id="fieldCanvas" width="900" height="900"></canvas>
 </div>
-
-<button onclick="clearPath()">Clear Path</button>
+<button onclick="clearPaths()">Clear Paths</button>
 
 <script>
 /* ---------- DATA ---------- */
-const sections = [
-  { name: "Start to Goal", distance: 1 },
-  { name: "Push Block", distance: 1 },
-  { name: "Return", distance: 1 }
+let sections = JSON.parse(localStorage.getItem("sections")) || [
+  { name:"Start to Goal", distance:1 }
 ];
-
 let runs = JSON.parse(localStorage.getItem("runs")) || { driver:{}, auton:{} };
 
-let startTime = null;
-let timerInterval = null;
-let activeSection = null;
+let startTime=null, timerInterval=null, activeSection=null;
 
 /* ---------- INIT ---------- */
-const sectionSelect = document.getElementById("sectionSelect");
-sections.forEach((s,i)=>{
-  const opt = document.createElement("option");
-  opt.value = i;
-  opt.textContent = s.name;
-  sectionSelect.appendChild(opt);
-});
-renderTable();
+renderSectionSetup();
+renderSectionDropdown();
+renderResults();
 
-/* ---------- TIMER ---------- */
-function startSection() {
-  if (timerInterval !== null) return;
-
-  activeSection = sectionSelect.value;
-  startTime = performance.now();
-
-  timerInterval = setInterval(() => {
-    const elapsed = (performance.now() - startTime) / 1000;
-    document.getElementById("timer").textContent =
-      "Time: " + elapsed.toFixed(2) + " s";
-  }, 30);
-}
-
-function stopSection() {
-  if (timerInterval === null) return;
-
-  clearInterval(timerInterval);
-  timerInterval = null;
-
-  const elapsed = (performance.now() - startTime) / 1000;
-  document.getElementById("timer").textContent =
-    "Time: " + elapsed.toFixed(2) + " s";
-
-  const mode = document.getElementById("mode").value;
-  runs[mode][activeSection] ??= [];
-  runs[mode][activeSection].push(elapsed);
-
-  localStorage.setItem("runs", JSON.stringify(runs));
-  renderTable();
-}
-
-/* ---------- TABLE ---------- */
-function renderTable() {
-  const tbody = document.getElementById("tableBody");
-  tbody.innerHTML = "";
-  const mode = document.getElementById("mode").value;
-
+/* ---------- SECTION SETUP ---------- */
+function renderSectionSetup(){
+  const t=document.getElementById("sectionTable");
+  t.innerHTML="";
   sections.forEach((s,i)=>{
-    const data = runs[mode][i];
-    if (!data || data.length === 0) return;
-
-    const best = Math.min(...data);
-    const current = data[data.length - 1];
-    const delta = current - best;
-    const speed = s.distance / current;
-
-    const row = tbody.insertRow();
-    row.insertCell().textContent = s.name;
-    row.insertCell().textContent = best.toFixed(2);
-    row.insertCell().textContent = current.toFixed(2);
-
-    const d = row.insertCell();
-    d.textContent = delta.toFixed(2);
-    d.className = delta <= 0 ? "good" : "bad";
-
-    row.insertCell().textContent = speed.toFixed(2);
-
-    const del = row.insertCell();
-    const btn = document.createElement("button");
-    btn.textContent = "🗑";
-    btn.onclick = () => {
-      data.pop();
-      localStorage.setItem("runs", JSON.stringify(runs));
-      renderTable();
-    };
-    del.appendChild(btn);
+    const r=t.insertRow();
+    const n=document.createElement("input");
+    n.value=s.name;
+    n.onchange=()=>{sections[i].name=n.value;save();};
+    const d=document.createElement("input");
+    d.type="number"; d.step="0.01"; d.value=s.distance;
+    d.onchange=()=>{sections[i].distance=parseFloat(d.value);save();};
+    const del=document.createElement("button");
+    del.textContent="🗑";
+    del.onclick=()=>{sections.splice(i,1);save();};
+    r.insertCell().appendChild(n);
+    r.insertCell().appendChild(d);
+    r.insertCell().appendChild(del);
   });
 }
 
-/* ---------- DRAWING ---------- */
-const canvas = document.getElementById("fieldCanvas");
-const ctx = canvas.getContext("2d");
-let drawing = false;
-let path = [];
-
-canvas.addEventListener("mousedown", e=>{drawing=true; addPoint(e);});
-canvas.addEventListener("mousemove", e=>{if(drawing) addPoint(e);});
-canvas.addEventListener("mouseup", ()=>drawing=false);
-
-function addPoint(e){
-  const r = canvas.getBoundingClientRect();
-  path.push({x:e.clientX-r.left, y:e.clientY-r.top});
-  drawPath();
+function addSection(){
+  sections.push({name:"New Section",distance:1});
+  save();
 }
 
-function drawPath(){
+function save(){
+  localStorage.setItem("sections",JSON.stringify(sections));
+  localStorage.setItem("runs",JSON.stringify(runs));
+  renderSectionSetup();
+  renderSectionDropdown();
+  renderResults();
+}
+
+function renderSectionDropdown(){
+  const s=document.getElementById("sectionSelect");
+  s.innerHTML="";
+  sections.forEach((sec,i)=>{
+    const o=document.createElement("option");
+    o.value=i; o.textContent=sec.name;
+    s.appendChild(o);
+  });
+}
+
+/* ---------- TIMER ---------- */
+function startSection(){
+  if(timerInterval) return;
+  activeSection=sectionSelect.value;
+  startTime=performance.now();
+  timerInterval=setInterval(()=>{
+    document.getElementById("timer").textContent=
+      "Time: "+((performance.now()-startTime)/1000).toFixed(2)+" s";
+  },30);
+}
+
+function stopSection(){
+  if(!timerInterval) return;
+  clearInterval(timerInterval);
+  timerInterval=null;
+  const t=(performance.now()-startTime)/1000;
+  const m=document.getElementById("mode").value;
+  runs[m][activeSection]??=[];
+  runs[m][activeSection].push(t);
+  localStorage.setItem("runs",JSON.stringify(runs));
+  renderResults();
+}
+
+/* ---------- RESULTS ---------- */
+function renderResults(){
+  const tb=document.getElementById("resultsTable");
+  tb.innerHTML="";
+  const m=document.getElementById("mode").value;
+  sections.forEach((s,i)=>{
+    const data=runs[m][i]||[];
+    const best=data.length?Math.min(...data):0;
+    const cur=data.length?data[data.length-1]:null;
+    const r=tb.insertRow();
+    r.insertCell().textContent=s.name;
+    r.insertCell().textContent=best.toFixed(2);
+    r.insertCell().textContent=cur?cur.toFixed(2):"—";
+    const d=r.insertCell();
+    d.textContent=cur?(cur-best).toFixed(2):"—";
+    d.className=cur&&cur<=best?"good":"bad";
+    r.insertCell().textContent=cur?(s.distance/cur).toFixed(2):"—";
+    const del=document.createElement("button");
+    del.textContent="🗑";
+    del.onclick=()=>{data.pop();renderResults();};
+    r.insertCell().appendChild(del);
+  });
+}
+
+/* ---------- PATH DRAWING (FIXED + NUMBERED) ---------- */
+const canvas=document.getElementById("fieldCanvas");
+const ctx=canvas.getContext("2d");
+
+let paths=[];
+let currentPath=null;
+
+canvas.addEventListener("mousedown",e=>{
+  const r=canvas.getBoundingClientRect();
+  currentPath=[{x:e.clientX-r.left,y:e.clientY-r.top}];
+  paths.push(currentPath);
+});
+
+canvas.addEventListener("mousemove",e=>{
+  if(!currentPath) return;
+  const r=canvas.getBoundingClientRect();
+  currentPath.push({x:e.clientX-r.left,y:e.clientY-r.top});
+  drawPaths();
+});
+
+canvas.addEventListener("mouseup",()=>{currentPath=null;});
+
+function drawPaths(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.beginPath();
-  ctx.strokeStyle="blue";
   ctx.lineWidth=3;
-  path.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
-  ctx.stroke();
+  ctx.font="20px Arial";
+  ctx.fillStyle="red";
+
+  paths.forEach((p,i)=>{
+    ctx.beginPath();
+    p.forEach((pt,j)=>j?ctx.lineTo(pt.x,pt.y):ctx.moveTo(pt.x,pt.y));
+    ctx.strokeStyle="blue";
+    ctx.stroke();
+    ctx.fillText(i+1,p[0].x+5,p[0].y-5);
+  });
 }
 
-function clearPath(){
-  path=[];
-  drawPath();
+function clearPaths(){
+  paths=[];
+  drawPaths();
 }
 </script>
 
