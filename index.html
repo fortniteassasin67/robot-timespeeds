@@ -5,15 +5,8 @@
 <title>Push Back Practice Dashboard</title>
 
 <style>
-body {
-  font-family: Arial, sans-serif;
-  padding: 20px;
-}
-
-button, select, input {
-  padding: 6px;
-  margin: 4px;
-}
+body { font-family: Arial, sans-serif; padding: 20px; }
+button, select { padding: 6px; margin: 4px; }
 
 table {
   border-collapse: collapse;
@@ -27,16 +20,13 @@ th, td {
   text-align: center;
 }
 
-th {
-  background: #eee;
-}
-
+th { background: #eee; }
 .good { background: #c8f7c5; }
 .bad { background: #f7c5c5; }
 
 #fieldContainer {
   position: relative;
-  width: 900px;   /* WIDER FIELD */
+  width: 900px;
   height: 900px;
   margin-top: 20px;
 }
@@ -65,7 +55,7 @@ th {
   <option value="auton">Auton</option>
 </select>
 
-<hr>
+<br><br>
 
 <label>Section:</label>
 <select id="sectionSelect"></select>
@@ -75,26 +65,21 @@ th {
 
 <p id="timer">Time: 0.00 s</p>
 
-<hr>
-
-<table id="dataTable">
-  <thead>
-    <tr>
-      <th>Section</th>
-      <th>Best</th>
-      <th>Current</th>
-      <th>Δ vs Best</th>
-      <th>Increase</th>
-      <th>Decrease</th>
-      <th>Speed</th>
-      <th>Delete</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
+<table>
+<thead>
+<tr>
+  <th>Section</th>
+  <th>Best</th>
+  <th>Current</th>
+  <th>Δ vs Best</th>
+  <th>Speed</th>
+  <th>Delete</th>
+</tr>
+</thead>
+<tbody id="tableBody"></tbody>
 </table>
 
 <h3>Field Map</h3>
-
 <div id="fieldContainer">
   <img id="fieldImage" src="field.png">
   <canvas id="fieldCanvas" width="900" height="900"></canvas>
@@ -103,64 +88,73 @@ th {
 <button onclick="clearPath()">Clear Path</button>
 
 <script>
-/* ---------------- DATA ---------------- */
-let sections = JSON.parse(localStorage.getItem("sections")) || [
+/* ---------- DATA ---------- */
+const sections = [
   { name: "Start to Goal", distance: 1 },
   { name: "Push Block", distance: 1 },
   { name: "Return", distance: 1 }
 ];
 
 let runs = JSON.parse(localStorage.getItem("runs")) || { driver:{}, auton:{} };
+
 let startTime = null;
+let timerInterval = null;
 let activeSection = null;
 
-/* ---------------- INIT ---------------- */
-function init() {
-  const select = document.getElementById("sectionSelect");
-  select.innerHTML = "";
-  sections.forEach((s,i)=>{
-    let opt = document.createElement("option");
-    opt.value = i;
-    opt.textContent = s.name;
-    select.appendChild(opt);
-  });
-  renderTable();
-}
-init();
+/* ---------- INIT ---------- */
+const sectionSelect = document.getElementById("sectionSelect");
+sections.forEach((s,i)=>{
+  const opt = document.createElement("option");
+  opt.value = i;
+  opt.textContent = s.name;
+  sectionSelect.appendChild(opt);
+});
+renderTable();
 
-/* ---------------- TIMER ---------------- */
+/* ---------- TIMER ---------- */
 function startSection() {
-  if (startTime !== null) return;
-  activeSection = document.getElementById("sectionSelect").value;
+  if (timerInterval !== null) return;
+
+  activeSection = sectionSelect.value;
   startTime = performance.now();
+
+  timerInterval = setInterval(() => {
+    const elapsed = (performance.now() - startTime) / 1000;
+    document.getElementById("timer").textContent =
+      "Time: " + elapsed.toFixed(2) + " s";
+  }, 30);
 }
 
 function stopSection() {
-  if (startTime === null) return;
+  if (timerInterval === null) return;
+
+  clearInterval(timerInterval);
+  timerInterval = null;
 
   const elapsed = (performance.now() - startTime) / 1000;
-  startTime = null;
+  document.getElementById("timer").textContent =
+    "Time: " + elapsed.toFixed(2) + " s";
 
   const mode = document.getElementById("mode").value;
-  runs[mode][activeSection] = runs[mode][activeSection] || [];
+  runs[mode][activeSection] ??= [];
   runs[mode][activeSection].push(elapsed);
 
   localStorage.setItem("runs", JSON.stringify(runs));
   renderTable();
 }
 
-/* ---------------- TABLE ---------------- */
+/* ---------- TABLE ---------- */
 function renderTable() {
-  const tbody = document.querySelector("#dataTable tbody");
+  const tbody = document.getElementById("tableBody");
   tbody.innerHTML = "";
   const mode = document.getElementById("mode").value;
 
   sections.forEach((s,i)=>{
-    const data = runs[mode][i] || [];
-    if (data.length === 0) return;
+    const data = runs[mode][i];
+    if (!data || data.length === 0) return;
 
     const best = Math.min(...data);
-    const current = data[data.length-1];
+    const current = data[data.length - 1];
     const delta = current - best;
     const speed = s.distance / current;
 
@@ -169,19 +163,17 @@ function renderTable() {
     row.insertCell().textContent = best.toFixed(2);
     row.insertCell().textContent = current.toFixed(2);
 
-    const deltaCell = row.insertCell();
-    deltaCell.textContent = delta.toFixed(2);
-    deltaCell.className = delta <= 0 ? "good" : "bad";
+    const d = row.insertCell();
+    d.textContent = delta.toFixed(2);
+    d.className = delta <= 0 ? "good" : "bad";
 
-    row.insertCell().textContent = "-";
-    row.insertCell().textContent = "-";
     row.insertCell().textContent = speed.toFixed(2);
 
     const del = row.insertCell();
     const btn = document.createElement("button");
     btn.textContent = "🗑";
-    btn.onclick = ()=>{
-      runs[mode][i].pop();
+    btn.onclick = () => {
+      data.pop();
       localStorage.setItem("runs", JSON.stringify(runs));
       renderTable();
     };
@@ -189,7 +181,7 @@ function renderTable() {
   });
 }
 
-/* ---------------- FIELD DRAWING ---------------- */
+/* ---------- DRAWING ---------- */
 const canvas = document.getElementById("fieldCanvas");
 const ctx = canvas.getContext("2d");
 let drawing = false;
