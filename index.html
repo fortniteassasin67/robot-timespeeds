@@ -26,7 +26,7 @@ th { background: #eee; }
 <h3>Section Setup</h3>
 <table>
 <thead>
-<tr><th>Name</th><th>Distance</th><th>Delete</th></tr>
+<tr><th>Name</th><th>Distance (miles)</th><th>Delete</th></tr>
 </thead>
 <tbody id="sectionTable"></tbody>
 </table>
@@ -35,7 +35,7 @@ th { background: #eee; }
 <hr>
 
 <label>Mode:</label>
-<select id="mode" onchange="renderResults(); drawPaths();">
+<select id="mode" onchange="renderResults(); loadSectionPaths();">
   <option value="driver">Driver</option>
   <option value="auton">Auton</option>
 </select>
@@ -55,10 +55,10 @@ th { background: #eee; }
 <thead>
 <tr>
   <th>Section</th>
-  <th>Best</th>
-  <th>Current</th>
+  <th>Best (s)</th>
+  <th>Current (s)</th>
   <th>Δ vs Best</th>
-  <th>Speed</th>
+  <th>Speed (MPH)</th>
   <th>Delete</th>
 </tr>
 </thead>
@@ -76,7 +76,7 @@ th { background: #eee; }
 /* ---------- DATA ---------- */
 let sections = JSON.parse(localStorage.getItem("sections")) || [{ name:"Start to Goal", distance:1 }];
 let runs = JSON.parse(localStorage.getItem("runs")) || { driver:{}, auton:{} };
-let pathsPerSection = JSON.parse(localStorage.getItem("pathsPerSection")) || {};
+let pathsPerSection = JSON.parse(localStorage.getItem("pathsPerSection")) || { driver:{}, auton:{} };
 
 let startTime=null, timerInterval=null, activeSection=null;
 
@@ -100,7 +100,12 @@ function renderSectionSetup(){
     d.onchange=()=>{sections[i].distance=parseFloat(d.value)||1; save();};
     const del=document.createElement("button");
     del.textContent="🗑";
-    del.onclick=()=>{ sections.splice(i,1); delete pathsPerSection[i]; save(); };
+    del.onclick=()=>{
+      sections.splice(i,1);
+      const m=document.getElementById("mode").value;
+      if(pathsPerSection[m]) delete pathsPerSection[m][i];
+      save();
+    };
     r.insertCell().appendChild(n);
     r.insertCell().appendChild(d);
     r.insertCell().appendChild(del);
@@ -132,6 +137,7 @@ function renderSectionDropdown(){
   });
   if(activeSection===null && sections.length) activeSection=0;
   document.getElementById("sectionSelect").value=activeSection;
+  loadSectionPaths();
 }
 
 /* ---------- TIMER ---------- */
@@ -164,16 +170,18 @@ function renderResults(){
   const m=document.getElementById("mode").value;
   sections.forEach((s,i)=>{
     const data=runs[m][i]||[];
-    const best=data.length?Math.min(...data):null;
-    const cur=data.length?data[data.length-1]:null;
+    const best = data.length ? Math.min(...data) : null;
+    const cur = data.length ? data[data.length-1] : null;
+
     const r=tb.insertRow();
     r.insertCell().textContent=s.name;
-    r.insertCell().textContent=best!==null?best.toFixed(2):"—";
-    r.insertCell().textContent=cur!==null?cur.toFixed(2):"—";
+    r.insertCell().textContent=(best!==null)?best.toFixed(2):"—";
+    r.insertCell().textContent=(cur!==null)?cur.toFixed(2):"—";
     const d=r.insertCell();
     d.textContent=(cur!==null && best!==null)?(cur-best).toFixed(2):"—";
     d.className=(cur!==null && best!==null && cur<=best)?"good":"bad";
-    r.insertCell().textContent=cur!==null?(s.distance/cur).toFixed(2):"—";
+    r.insertCell().textContent=(cur!==null)?((s.distance*3600)/cur).toFixed(2)+" mph":"—";
+
     const del=document.createElement("button");
     del.textContent="🗑";
     del.onclick=()=>{
@@ -182,7 +190,7 @@ function renderResults(){
     };
     r.insertCell().appendChild(del);
   });
-  drawPaths(); // redraw to highlight best path
+  drawPaths();
 }
 
 /* ---------- PATH DRAWING ---------- */
@@ -218,14 +226,13 @@ function drawPaths(){
   const bestIndex=data.indexOf(Math.min(...data));
 
   paths.forEach((p,i)=>{
-    // highlight best path
     ctx.strokeStyle = (i===bestIndex) ? "green" : "blue";
     ctx.fillStyle = (i===bestIndex) ? "green" : "red";
 
     ctx.beginPath();
     p.forEach((pt,j)=>j?ctx.lineTo(pt.x,pt.y):ctx.moveTo(pt.x,pt.y));
     ctx.stroke();
-    ctx.fillText(i+1, p[0].x+5, p[0].y-5); // numbered labels
+    ctx.fillText(i+1, p[0].x+5, p[0].y-5);
   });
 }
 
@@ -237,13 +244,16 @@ function clearPaths(){
 
 function savePaths(){
   if(activeSection===null) return;
-  pathsPerSection[activeSection]=paths;
+  const m=document.getElementById("mode").value;
+  if(!pathsPerSection[m]) pathsPerSection[m]={};
+  pathsPerSection[m][activeSection]=paths;
   localStorage.setItem("pathsPerSection",JSON.stringify(pathsPerSection));
 }
 
 function loadSectionPaths(){
   activeSection=parseInt(document.getElementById("sectionSelect").value);
-  paths = pathsPerSection[activeSection] || [];
+  const m=document.getElementById("mode").value;
+  paths = (pathsPerSection[m] && pathsPerSection[m][activeSection]) || [];
   drawPaths();
 }
 </script>
