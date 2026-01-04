@@ -76,9 +76,9 @@ th { background: #eee; }
 /* ---------- DATA ---------- */
 let sections = JSON.parse(localStorage.getItem("sections")) || [{ name:"Start to Goal", distance:1 }];
 let runs = JSON.parse(localStorage.getItem("runs")) || { driver:{}, auton:{} };
-let pathsPerSection = JSON.parse(localStorage.getItem("pathsPerSection")) || { driver:{}, auton:{} };
 
 let startTime=null, timerInterval=null, activeSection=null;
+let currentPath=null;
 
 /* ---------- INIT ---------- */
 renderSectionSetup();
@@ -103,7 +103,7 @@ function renderSectionSetup(){
     del.onclick=()=>{
       sections.splice(i,1);
       const m=document.getElementById("mode").value;
-      if(pathsPerSection[m]) delete pathsPerSection[m][i];
+      if(runs[m]) delete runs[m][i];
       save();
     };
     r.insertCell().appendChild(n);
@@ -113,14 +113,13 @@ function renderSectionSetup(){
 }
 
 function addSection(){
-  sections.push({name:"New Section",distance:1});
+  sections.push({name:"New Section", distance:1});
   save();
 }
 
 function save(){
-  localStorage.setItem("sections",JSON.stringify(sections));
-  localStorage.setItem("runs",JSON.stringify(runs));
-  localStorage.setItem("pathsPerSection",JSON.stringify(pathsPerSection));
+  localStorage.setItem("sections", JSON.stringify(sections));
+  localStorage.setItem("runs", JSON.stringify(runs));
   renderSectionSetup();
   renderSectionDropdown();
   renderResults();
@@ -136,7 +135,7 @@ function renderSectionDropdown(){
     s.appendChild(o);
   });
   if(activeSection===null && sections.length) activeSection=0;
-  document.getElementById("sectionSelect").value=activeSection;
+  document.getElementById("sectionSelect").value = activeSection;
   loadSectionPaths();
 }
 
@@ -144,9 +143,10 @@ function renderSectionDropdown(){
 function startSection(){
   if(timerInterval) return;
   activeSection=parseInt(document.getElementById("sectionSelect").value);
+  currentPath=[];
   startTime=performance.now();
   timerInterval=setInterval(()=>{
-    document.getElementById("timer").textContent=
+    document.getElementById("timer").textContent = 
       "Time: "+((performance.now()-startTime)/1000).toFixed(2)+" s";
   },30);
 }
@@ -157,8 +157,8 @@ function stopSection(){
   timerInterval=null;
   const t=(performance.now()-startTime)/1000;
   const m=document.getElementById("mode").value;
-  runs[m][activeSection] = runs[m][activeSection] || [];
-  runs[m][activeSection].push(t);
+  if(!runs[m][activeSection]) runs[m][activeSection]=[];
+  runs[m][activeSection].push({time: t, path: currentPath.slice()});
   save();
   renderResults();
 }
@@ -168,19 +168,21 @@ function renderResults(){
   const tb=document.getElementById("resultsTable");
   tb.innerHTML="";
   const m=document.getElementById("mode").value;
-  sections.forEach((s,i)=>{
-    const data=runs[m][i]||[];
-    const best = data.length ? Math.min(...data) : null;
-    const cur = data.length ? data[data.length-1] : null;
 
-    const r=tb.insertRow();
-    r.insertCell().textContent=s.name;
-    r.insertCell().textContent=(best!==null)?best.toFixed(2):"—";
-    r.insertCell().textContent=(cur!==null)?cur.toFixed(2):"—";
-    const d=r.insertCell();
-    d.textContent=(cur!==null && best!==null)?(cur-best).toFixed(2):"—";
-    d.className=(cur!==null && best!==null && cur<=best)?"good":"bad";
-    r.insertCell().textContent=(cur!==null)?((s.distance*3600)/cur).toFixed(2)+" mph":"—";
+  sections.forEach((s,i)=>{
+    const data = runs[m][i] || [];
+    let bestTime = null;
+    if(data.length>0) bestTime = Math.min(...data.map(d=>d.time));
+    const cur = data.length>0 ? data[data.length-1].time : null;
+
+    const r = tb.insertRow();
+    r.insertCell().textContent = s.name;
+    r.insertCell().textContent = (bestTime!==null)?bestTime.toFixed(2):"—";
+    r.insertCell().textContent = (cur!==null)?cur.toFixed(2):"—";
+    const dCell = r.insertCell();
+    dCell.textContent = (cur!==null && bestTime!==null)?(cur-bestTime).toFixed(2):"—";
+    dCell.className = (cur!==null && bestTime!==null && cur<=bestTime)?"good":"bad";
+    r.insertCell().textContent = (cur!==null)?((s.distance*3600)/cur).toFixed(2)+" mph":"—";
 
     const del=document.createElement("button");
     del.textContent="🗑";
@@ -190,70 +192,74 @@ function renderResults(){
     };
     r.insertCell().appendChild(del);
   });
+
   drawPaths();
 }
 
 /* ---------- PATH DRAWING ---------- */
-const canvas=document.getElementById("fieldCanvas");
-const ctx=canvas.getContext("2d");
+const canvas = document.getElementById("fieldCanvas");
+const ctx = canvas.getContext("2d");
 
-let paths=[], currentPath=null;
-
-canvas.addEventListener("mousedown",e=>{
-  const r=canvas.getBoundingClientRect();
-  currentPath=[{x:e.clientX-r.left,y:e.clientY-r.top}];
-  paths.push(currentPath);
-  savePaths();
+canvas.addEventListener("mousedown", e=>{
+  if(!activeSection) return;
+  const rect = canvas.getBoundingClientRect();
+  currentPath = [{x:e.clientX-rect.left, y:e.clientY-rect.top}];
 });
 
-canvas.addEventListener("mousemove",e=>{
+canvas.addEventListener("mousemove", e=>{
   if(!currentPath) return;
-  const r=canvas.getBoundingClientRect();
-  currentPath.push({x:e.clientX-r.left,y:e.clientY-r.top});
+  const rect = canvas.getBoundingClientRect();
+  currentPath.push({x:e.clientX-rect.left, y:e.clientY-rect.top});
   drawPaths();
-  savePaths();
 });
 
-canvas.addEventListener("mouseup",()=>{currentPath=null;});
+canvas.addEventListener("mouseup", ()=>{currentPath=null;});
 
 function drawPaths(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.lineWidth=3;
-  ctx.font="20px Arial";
+  ctx.lineWidth = 3;
+  ctx.font = "20px Arial";
 
-  const m=document.getElementById("mode").value;
-  const data=runs[m][activeSection]||[];
-  const bestIndex=data.indexOf(Math.min(...data));
+  const m = document.getElementById("mode").value;
+  const data = runs[m][activeSection] || [];
 
-  paths.forEach((p,i)=>{
-    ctx.strokeStyle = (i===bestIndex) ? "green" : "blue";
-    ctx.fillStyle = (i===bestIndex) ? "green" : "red";
+  if(data.length===0) return;
 
+  // draw all paths
+  data.forEach((run, index)=>{
     ctx.beginPath();
-    p.forEach((pt,j)=>j?ctx.lineTo(pt.x,pt.y):ctx.moveTo(pt.x,pt.y));
+    run.path.forEach((pt,j)=> j?ctx.lineTo(pt.x, pt.y):ctx.moveTo(pt.x, pt.y));
+    // color: best green, latest blue, others lightgray
+    const bestTime = Math.min(...data.map(d=>d.time));
+    if(run.time === bestTime) ctx.strokeStyle="green";
+    else if(index === data.length-1) ctx.strokeStyle="blue";
+    else ctx.strokeStyle="lightgray";
     ctx.stroke();
-    ctx.fillText(i+1, p[0].x+5, p[0].y-5);
+
+    if(run.path.length>0){
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(index+1, run.path[0].x+5, run.path[0].y-5);
+    }
   });
+
+  // draw current path if drawing
+  if(currentPath && currentPath.length>0){
+    ctx.beginPath();
+    currentPath.forEach((pt,j)=> j?ctx.lineTo(pt.x, pt.y):ctx.moveTo(pt.x, pt.y));
+    ctx.strokeStyle="blue";
+    ctx.stroke();
+  }
 }
 
 function clearPaths(){
-  paths=[];
-  savePaths();
+  const m = document.getElementById("mode").value;
+  if(runs[m][activeSection]) runs[m][activeSection]=[];
   drawPaths();
-}
-
-function savePaths(){
-  if(activeSection===null) return;
-  const m=document.getElementById("mode").value;
-  if(!pathsPerSection[m]) pathsPerSection[m]={};
-  pathsPerSection[m][activeSection]=paths;
-  localStorage.setItem("pathsPerSection",JSON.stringify(pathsPerSection));
+  save();
 }
 
 function loadSectionPaths(){
   activeSection=parseInt(document.getElementById("sectionSelect").value);
-  const m=document.getElementById("mode").value;
-  paths = (pathsPerSection[m] && pathsPerSection[m][activeSection]) || [];
   drawPaths();
 }
 </script>
