@@ -33,16 +33,14 @@ th { background: #eee; }
 #fieldImage {
   width: 100%;
   height: 100%;
-  display: block;
+  pointer-events: none;
 }
 
 #fieldCanvas {
   position: absolute;
   top: 0;
   left: 0;
-  width: 900px;
-  height: 900px;
-  z-index: 10;
+  z-index: 5;
   cursor: crosshair;
 }
 </style>
@@ -76,7 +74,7 @@ th { background: #eee; }
 <br><br>
 
 <label>Section:</label>
-<select id="sectionSelect" onchange="drawPaths()"></select>
+<select id="sectionSelect"></select>
 
 <button onclick="startRun()">Start</button>
 <button onclick="stopRun()">Stop</button>
@@ -104,27 +102,25 @@ th { background: #eee; }
   <canvas id="fieldCanvas" width="900" height="900"></canvas>
 </div>
 
-<button onclick="clearRuns()">Clear Runs</button>
-
 <script>
-/* ========== DATA ========== */
+/* ========= STATE ========= */
 let sections = JSON.parse(localStorage.getItem("sections")) || [
-  { name: "Start to Goal", distance: 0.001 }
+  { name:"Start to Goal", distance:0.001 }
 ];
 
 let runs = JSON.parse(localStorage.getItem("runs")) || {
-  driver: {},
-  auton: {}
+  driver:{}, auton:{}
 };
 
+let activeSection = 0;
 let running = false;
 let startTime = 0;
 let timerInterval = null;
 
 let currentPath = [];
-let isDrawing = false;
+let drawing = false;
 
-/* ========== INIT ========== */
+/* ========= INIT ========= */
 renderSectionSetup();
 renderSectionDropdown();
 renderResults();
@@ -132,27 +128,33 @@ drawPaths();
 
 /* ===== SECTION SETUP ===== */
 function renderSectionSetup(){
-  sectionTable.innerHTML = "";
+  sectionTable.innerHTML="";
   sections.forEach((s,i)=>{
-    const r = sectionTable.insertRow();
+    const r=sectionTable.insertRow();
 
-    const n = document.createElement("input");
-    n.value = s.name;
-    n.onchange = () => { sections[i].name = n.value; save(); };
+    const n=document.createElement("input");
+    n.value=s.name;
+    n.onchange=()=>{ sections[i].name=n.value; persist(); };
 
-    const d = document.createElement("input");
-    d.type = "number";
-    d.step = "0.0001";
-    d.value = s.distance;
-    d.onchange = () => {
-      const v = parseFloat(d.value);
-      sections[i].distance = Number.isFinite(v) ? v : 0;
-      save();
+    const d=document.createElement("input");
+    d.type="number";
+    d.step="0.0001";
+    d.value=Number.isFinite(s.distance)?s.distance:0;
+    d.onchange=()=>{
+      const v=parseFloat(d.value);
+      sections[i].distance=Number.isFinite(v)?v:0;
+      persist();
     };
 
-    const del = document.createElement("button");
-    del.textContent = "🗑";
-    del.onclick = () => { sections.splice(i,1); save(); };
+    const del=document.createElement("button");
+    del.textContent="🗑";
+    del.onclick=()=>{
+      sections.splice(i,1);
+      delete runs.driver[i];
+      delete runs.auton[i];
+      activeSection=Math.max(0,activeSection-1);
+      persist(true);
+    };
 
     r.insertCell().appendChild(n);
     r.insertCell().appendChild(d);
@@ -161,158 +163,156 @@ function renderSectionSetup(){
 }
 
 function addSection(){
-  sections.push({ name:"New Section", distance:0 });
-  save();
+  sections.push({name:"New Section",distance:0});
+  persist(true);
 }
 
 function renderSectionDropdown(){
-  sectionSelect.innerHTML = "";
+  sectionSelect.innerHTML="";
   sections.forEach((s,i)=>{
-    const o = document.createElement("option");
-    o.value = i;
-    o.textContent = s.name;
+    const o=document.createElement("option");
+    o.value=i;
+    o.textContent=s.name;
     sectionSelect.appendChild(o);
   });
+  sectionSelect.value=activeSection;
+  sectionSelect.onchange=()=>{
+    activeSection=parseInt(sectionSelect.value);
+    drawPaths();
+  };
 }
 
 /* ===== TIMER ===== */
 function startRun(){
-  if (running) return;
-  running = true;
-  currentPath = [];
-  startTime = performance.now();
-  timerInterval = setInterval(()=>{
-    timer.textContent =
-      "Time: " + ((performance.now()-startTime)/1000).toFixed(2) + " s";
-  }, 30);
+  if(running) return;
+  running=true;
+  currentPath=[];
+  startTime=performance.now();
+  timerInterval=setInterval(()=>{
+    timer.textContent=
+      "Time: "+((performance.now()-startTime)/1000).toFixed(2)+" s";
+  },30);
 }
 
 function stopRun(){
-  if (!running) return;
-  running = false;
+  if(!running) return;
+  running=false;
   clearInterval(timerInterval);
 
-  const time = (performance.now() - startTime) / 1000;
-  if (!Number.isFinite(time) || time <= 0) return;
+  const t=(performance.now()-startTime)/1000;
+  if(!Number.isFinite(t)||t<=0) return;
 
-  const m = mode.value;
-  const s = sectionSelect.value;
+  const m=mode.value;
+  if(!Array.isArray(runs[m][activeSection]))
+    runs[m][activeSection]=[];
 
-  if (!Array.isArray(runs[m][s])) runs[m][s] = [];
-  runs[m][s].push({ time, path: [...currentPath] });
+  runs[m][activeSection].push({
+    time:t,
+    path:[...currentPath]
+  });
 
-  save();
+  persist();
 }
 
 /* ===== RESULTS ===== */
 function renderResults(){
-  resultsTable.innerHTML = "";
-  const m = mode.value;
+  resultsTable.innerHTML="";
+  const m=mode.value;
 
   sections.forEach((s,i)=>{
-    const r = resultsTable.insertRow();
-    r.insertCell().textContent = s.name;
+    const r=resultsTable.insertRow();
+    r.insertCell().textContent=s.name;
 
-    const data = runs[m][i] || [];
+    const data=runs[m][i]||[];
+    if(data.length===0){
+      r.insertCell().textContent="—";
+      r.insertCell().textContent="—";
+      r.insertCell().textContent="—";
+      r.insertCell().textContent="—";
+    }else{
+      const times=data.map(x=>x.time).filter(Number.isFinite);
+      const best=Math.min(...times);
+      const cur=times[times.length-1];
 
-    if (data.length === 0){
-      r.insertCell().textContent = "—";
-      r.insertCell().textContent = "—";
-      r.insertCell().textContent = "—";
-      r.insertCell().textContent = "—";
-    } else {
-      const times = data.map(d=>d.time);
-      const best = Math.min(...times);
-      const cur  = times[times.length-1];
+      r.insertCell().textContent=best.toFixed(2);
+      r.insertCell().textContent=cur.toFixed(2);
 
-      r.insertCell().textContent = best.toFixed(2);
-      r.insertCell().textContent = cur.toFixed(2);
+      const dCell=r.insertCell();
+      dCell.textContent=(cur-best).toFixed(2);
+      dCell.className=cur<=best?"good":"bad";
 
-      const delta = cur - best;
-      const dCell = r.insertCell();
-      dCell.textContent = delta.toFixed(2);
-      dCell.className = delta <= 0 ? "good" : "bad";
-
-      r.insertCell().textContent =
-        s.distance > 0 ? ((s.distance*3600)/cur).toFixed(2)+" mph" : "—";
+      const dist=Number.isFinite(s.distance)?s.distance:0;
+      r.insertCell().textContent=
+        dist>0?((dist*3600)/cur).toFixed(2)+" mph":"—";
     }
 
-    const del = document.createElement("button");
-    del.textContent = "🗑";
-    del.onclick = () => {
-      if (data.length) data.pop();
-      save();
+    const del=document.createElement("button");
+    del.textContent="🗑";
+    del.onclick=()=>{
+      if(data.length) data.pop();
+      persist();
     };
     r.insertCell().appendChild(del);
   });
 }
 
 /* ===== PATH DRAWING ===== */
-const canvas = document.getElementById("fieldCanvas");
-const ctx = canvas.getContext("2d");
+const ctx=fieldCanvas.getContext("2d");
 
-canvas.addEventListener("mousedown", e=>{
-  if (!running) return;
-  isDrawing = true;
+fieldCanvas.addEventListener("mousedown",e=>{
+  if(!running) return;
+  drawing=true;
   addPoint(e);
 });
 
-canvas.addEventListener("mousemove", e=>{
-  if (!running || !isDrawing) return;
+fieldCanvas.addEventListener("mousemove",e=>{
+  if(!drawing) return;
   addPoint(e);
   drawPaths();
 });
 
-canvas.addEventListener("mouseup", ()=> isDrawing=false);
-canvas.addEventListener("mouseleave", ()=> isDrawing=false);
+fieldCanvas.addEventListener("mouseup",()=>drawing=false);
+fieldCanvas.addEventListener("mouseleave",()=>drawing=false);
 
 function addPoint(e){
-  const r = canvas.getBoundingClientRect();
+  const r=fieldCanvas.getBoundingClientRect();
   currentPath.push({
-    x: e.clientX - r.left,
-    y: e.clientY - r.top
+    x:e.clientX-r.left,
+    y:e.clientY-r.top
   });
 }
 
 function drawPaths(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  const m = mode.value;
-  const s = sectionSelect.value;
-  const data = runs[m][s] || [];
+  ctx.clearRect(0,0,900,900);
+  const m=mode.value;
+  const data=runs[m][activeSection]||[];
 
-  ctx.lineWidth = 3;
-  ctx.font = "18px Arial";
+  ctx.lineWidth=3;
+  ctx.font="18px Arial";
 
   data.forEach((run,i)=>{
     ctx.beginPath();
     run.path.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
-    ctx.strokeStyle = "gray";
+    ctx.strokeStyle="gray";
     ctx.stroke();
-    if (run.path.length){
-      ctx.fillStyle = "gray";
-      ctx.fillText(i+1, run.path[0].x+5, run.path[0].y-5);
-    }
+    if(run.path.length)
+      ctx.fillText(i+1,run.path[0].x+5,run.path[0].y-5);
   });
 
-  if (currentPath.length){
+  if(currentPath.length){
     ctx.beginPath();
     currentPath.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
-    ctx.strokeStyle = "blue";
+    ctx.strokeStyle="blue";
     ctx.stroke();
   }
 }
 
-function clearRuns(){
-  runs[mode.value][sectionSelect.value] = [];
-  save();
-}
-
 /* ===== SAVE ===== */
-function save(){
-  localStorage.setItem("sections", JSON.stringify(sections));
-  localStorage.setItem("runs", JSON.stringify(runs));
+function persist(rebuild=false){
+  localStorage.setItem("sections",JSON.stringify(sections));
+  localStorage.setItem("runs",JSON.stringify(runs));
   renderSectionSetup();
-  renderSectionDropdown();
+  if(rebuild) renderSectionDropdown();
   renderResults();
   drawPaths();
 }
