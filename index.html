@@ -8,12 +8,20 @@
 body { font-family: Arial, sans-serif; padding: 20px; }
 button, select, input { padding: 6px; margin: 4px; }
 
-table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 10px;
+}
+th, td {
+  border: 1px solid #ccc;
+  padding: 6px;
+  text-align: center;
+}
 th { background: #eee; }
 
 .good { background: #c8f7c5; }
-.bad { background: #f7c5c5; }
+.bad  { background: #f7c5c5; }
 
 #fieldContainer {
   position: relative;
@@ -21,15 +29,20 @@ th { background: #eee; }
   height: 900px;
   margin-top: 20px;
 }
+
 #fieldImage {
   width: 100%;
   height: 100%;
-  pointer-events: none;
+  display: block;
 }
+
 #fieldCanvas {
   position: absolute;
   top: 0;
   left: 0;
+  width: 900px;
+  height: 900px;
+  z-index: 10;
   cursor: crosshair;
 }
 </style>
@@ -42,7 +55,11 @@ th { background: #eee; }
 <h3>Section Setup</h3>
 <table>
 <thead>
-<tr><th>Name</th><th>Distance (miles)</th><th>Delete</th></tr>
+<tr>
+  <th>Name</th>
+  <th>Distance (miles)</th>
+  <th>Delete</th>
+</tr>
 </thead>
 <tbody id="sectionTable"></tbody>
 </table>
@@ -90,7 +107,7 @@ th { background: #eee; }
 <button onclick="clearRuns()">Clear Runs</button>
 
 <script>
-/* ---------- DATA ---------- */
+/* ========== DATA ========== */
 let sections = JSON.parse(localStorage.getItem("sections")) || [
   { name: "Start to Goal", distance: 0.001 }
 ];
@@ -100,34 +117,42 @@ let runs = JSON.parse(localStorage.getItem("runs")) || {
   auton: {}
 };
 
-let startTime = null;
+let running = false;
+let startTime = 0;
 let timerInterval = null;
-let currentPath = [];
 
-/* ---------- INIT ---------- */
+let currentPath = [];
+let isDrawing = false;
+
+/* ========== INIT ========== */
 renderSectionSetup();
 renderSectionDropdown();
 renderResults();
 drawPaths();
 
-/* ---------- SECTION SETUP ---------- */
+/* ===== SECTION SETUP ===== */
 function renderSectionSetup(){
-  const t = sectionTable;
-  t.innerHTML = "";
+  sectionTable.innerHTML = "";
   sections.forEach((s,i)=>{
-    const r = t.insertRow();
+    const r = sectionTable.insertRow();
 
     const n = document.createElement("input");
     n.value = s.name;
-    n.onchange = ()=>{ sections[i].name=n.value; save(); };
+    n.onchange = () => { sections[i].name = n.value; save(); };
 
     const d = document.createElement("input");
-    d.type="number"; d.step="0.0001"; d.value=s.distance;
-    d.onchange = ()=>{ sections[i].distance=parseFloat(d.value)||0; save(); };
+    d.type = "number";
+    d.step = "0.0001";
+    d.value = s.distance;
+    d.onchange = () => {
+      const v = parseFloat(d.value);
+      sections[i].distance = Number.isFinite(v) ? v : 0;
+      save();
+    };
 
     const del = document.createElement("button");
-    del.textContent="🗑";
-    del.onclick = ()=>{ sections.splice(i,1); save(); };
+    del.textContent = "🗑";
+    del.onclick = () => { sections.splice(i,1); save(); };
 
     r.insertCell().appendChild(n);
     r.insertCell().appendChild(d);
@@ -136,140 +161,156 @@ function renderSectionSetup(){
 }
 
 function addSection(){
-  sections.push({ name:"New Section", distance:0.001 });
+  sections.push({ name:"New Section", distance:0 });
   save();
 }
 
 function renderSectionDropdown(){
-  sectionSelect.innerHTML="";
+  sectionSelect.innerHTML = "";
   sections.forEach((s,i)=>{
-    const o=document.createElement("option");
-    o.value=i; o.textContent=s.name;
+    const o = document.createElement("option");
+    o.value = i;
+    o.textContent = s.name;
     sectionSelect.appendChild(o);
   });
 }
 
-/* ---------- TIMER ---------- */
+/* ===== TIMER ===== */
 function startRun(){
-  if(timerInterval) return;
+  if (running) return;
+  running = true;
   currentPath = [];
   startTime = performance.now();
   timerInterval = setInterval(()=>{
     timer.textContent =
-      "Time: "+((performance.now()-startTime)/1000).toFixed(2)+" s";
-  },30);
+      "Time: " + ((performance.now()-startTime)/1000).toFixed(2) + " s";
+  }, 30);
 }
 
 function stopRun(){
-  if(!timerInterval) return;
+  if (!running) return;
+  running = false;
   clearInterval(timerInterval);
-  timerInterval=null;
 
-  const time=(performance.now()-startTime)/1000;
-  const m=mode.value;
-  const s=sectionSelect.value;
+  const time = (performance.now() - startTime) / 1000;
+  if (!Number.isFinite(time) || time <= 0) return;
 
-  if(!runs[m][s]) runs[m][s]=[];
-  runs[m][s].push({ time, path:[...currentPath] });
+  const m = mode.value;
+  const s = sectionSelect.value;
+
+  if (!Array.isArray(runs[m][s])) runs[m][s] = [];
+  runs[m][s].push({ time, path: [...currentPath] });
 
   save();
 }
 
-/* ---------- RESULTS ---------- */
+/* ===== RESULTS ===== */
 function renderResults(){
-  resultsTable.innerHTML="";
-  const m=mode.value;
+  resultsTable.innerHTML = "";
+  const m = mode.value;
 
   sections.forEach((s,i)=>{
-    const data=runs[m][i]||[];
-    const r=resultsTable.insertRow();
+    const r = resultsTable.insertRow();
+    r.insertCell().textContent = s.name;
 
-    r.insertCell().textContent=s.name;
+    const data = runs[m][i] || [];
 
-    if(data.length===0){
-      r.insertCell().textContent="—";
-      r.insertCell().textContent="—";
-      r.insertCell().textContent="—";
-      r.insertCell().textContent="—";
+    if (data.length === 0){
+      r.insertCell().textContent = "—";
+      r.insertCell().textContent = "—";
+      r.insertCell().textContent = "—";
+      r.insertCell().textContent = "—";
     } else {
-      const times=data.map(d=>d.time);
-      const best=Math.min(...times);
-      const cur=times[times.length-1];
+      const times = data.map(d=>d.time);
+      const best = Math.min(...times);
+      const cur  = times[times.length-1];
 
-      r.insertCell().textContent=best.toFixed(2);
-      r.insertCell().textContent=cur.toFixed(2);
+      r.insertCell().textContent = best.toFixed(2);
+      r.insertCell().textContent = cur.toFixed(2);
 
-      const dCell=r.insertCell();
-      dCell.textContent=(cur-best).toFixed(2);
-      dCell.className=cur<=best?"good":"bad";
+      const delta = cur - best;
+      const dCell = r.insertCell();
+      dCell.textContent = delta.toFixed(2);
+      dCell.className = delta <= 0 ? "good" : "bad";
 
-      r.insertCell().textContent=
-        ((s.distance*3600)/cur).toFixed(2)+" mph";
+      r.insertCell().textContent =
+        s.distance > 0 ? ((s.distance*3600)/cur).toFixed(2)+" mph" : "—";
     }
 
-    const del=document.createElement("button");
-    del.textContent="🗑";
-    del.onclick=()=>{
-      if(data.length) data.pop();
+    const del = document.createElement("button");
+    del.textContent = "🗑";
+    del.onclick = () => {
+      if (data.length) data.pop();
       save();
     };
     r.insertCell().appendChild(del);
   });
 }
 
-/* ---------- PATH DRAWING ---------- */
-const ctx=fieldCanvas.getContext("2d");
+/* ===== PATH DRAWING ===== */
+const canvas = document.getElementById("fieldCanvas");
+const ctx = canvas.getContext("2d");
 
-fieldCanvas.addEventListener("mousedown",e=>{
-  if(!timerInterval) return;
+canvas.addEventListener("mousedown", e=>{
+  if (!running) return;
+  isDrawing = true;
   addPoint(e);
 });
 
-fieldCanvas.addEventListener("mousemove",e=>{
-  if(!timerInterval) return;
+canvas.addEventListener("mousemove", e=>{
+  if (!running || !isDrawing) return;
   addPoint(e);
   drawPaths();
 });
 
+canvas.addEventListener("mouseup", ()=> isDrawing=false);
+canvas.addEventListener("mouseleave", ()=> isDrawing=false);
+
 function addPoint(e){
-  const r=fieldCanvas.getBoundingClientRect();
-  currentPath.push({x:e.clientX-r.left,y:e.clientY-r.top});
+  const r = canvas.getBoundingClientRect();
+  currentPath.push({
+    x: e.clientX - r.left,
+    y: e.clientY - r.top
+  });
 }
 
 function drawPaths(){
-  ctx.clearRect(0,0,900,900);
-  const m=mode.value;
-  const s=sectionSelect.value;
-  const data=runs[m][s]||[];
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const m = mode.value;
+  const s = sectionSelect.value;
+  const data = runs[m][s] || [];
 
-  ctx.lineWidth=3;
-  ctx.font="20px Arial";
+  ctx.lineWidth = 3;
+  ctx.font = "18px Arial";
 
   data.forEach((run,i)=>{
     ctx.beginPath();
     run.path.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
-    ctx.strokeStyle="gray";
+    ctx.strokeStyle = "gray";
     ctx.stroke();
-    if(run.path.length)
-      ctx.fillText(i+1,run.path[0].x+5,run.path[0].y-5);
+    if (run.path.length){
+      ctx.fillStyle = "gray";
+      ctx.fillText(i+1, run.path[0].x+5, run.path[0].y-5);
+    }
   });
 
-  if(currentPath.length){
+  if (currentPath.length){
     ctx.beginPath();
     currentPath.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
-    ctx.strokeStyle="blue";
+    ctx.strokeStyle = "blue";
     ctx.stroke();
   }
 }
 
 function clearRuns(){
-  runs[mode.value][sectionSelect.value]=[];
+  runs[mode.value][sectionSelect.value] = [];
   save();
 }
 
+/* ===== SAVE ===== */
 function save(){
-  localStorage.setItem("sections",JSON.stringify(sections));
-  localStorage.setItem("runs",JSON.stringify(runs));
+  localStorage.setItem("sections", JSON.stringify(sections));
+  localStorage.setItem("runs", JSON.stringify(runs));
   renderSectionSetup();
   renderSectionDropdown();
   renderResults();
