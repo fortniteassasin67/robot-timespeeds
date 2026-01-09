@@ -8,16 +8,8 @@
 body { font-family: Arial, sans-serif; padding: 20px; }
 button, select, input { padding: 6px; margin: 4px; }
 
-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-top: 10px;
-}
-th, td {
-  border: 1px solid #ccc;
-  padding: 6px;
-  text-align: center;
-}
+table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
 th { background: #eee; }
 
 .good { background: #c8f7c5; }
@@ -40,7 +32,6 @@ th { background: #eee; }
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 5;
   cursor: crosshair;
 }
 </style>
@@ -66,7 +57,7 @@ th { background: #eee; }
 <hr>
 
 <label>Mode:</label>
-<select id="mode" onchange="renderResults(); drawPaths();">
+<select id="mode" onchange="renderResults()">
   <option value="driver">Driver</option>
   <option value="auton">Auton</option>
 </select>
@@ -96,14 +87,16 @@ th { background: #eee; }
 <tbody id="resultsTable"></tbody>
 </table>
 
-<h3>Field Map</h3>
+<h3>Field Path Planner</h3>
 <div id="fieldContainer">
   <img id="fieldImage" src="field.png">
   <canvas id="fieldCanvas" width="900" height="900"></canvas>
 </div>
 
+<button onclick="clearPaths()">Clear Paths</button>
+
 <script>
-/* ========= STATE ========= */
+/* ========= DATA ========= */
 let sections = JSON.parse(localStorage.getItem("sections")) || [
   { name:"Start to Goal", distance:0.001 }
 ];
@@ -117,8 +110,9 @@ let running = false;
 let startTime = 0;
 let timerInterval = null;
 
-let currentPath = [];
-let drawing = false;
+/* ========= PATH DATA (GLOBAL) ========= */
+let paths = JSON.parse(localStorage.getItem("paths")) || [];
+let currentPath = null;
 
 /* ========= INIT ========= */
 renderSectionSetup();
@@ -134,16 +128,16 @@ function renderSectionSetup(){
 
     const n=document.createElement("input");
     n.value=s.name;
-    n.onchange=()=>{ sections[i].name=n.value; persist(); };
+    n.onchange=()=>{ sections[i].name=n.value; save(); };
 
     const d=document.createElement("input");
     d.type="number";
     d.step="0.0001";
-    d.value=Number.isFinite(s.distance)?s.distance:0;
+    d.value=s.distance;
     d.onchange=()=>{
       const v=parseFloat(d.value);
       sections[i].distance=Number.isFinite(v)?v:0;
-      persist();
+      save();
     };
 
     const del=document.createElement("button");
@@ -153,7 +147,7 @@ function renderSectionSetup(){
       delete runs.driver[i];
       delete runs.auton[i];
       activeSection=Math.max(0,activeSection-1);
-      persist(true);
+      save(true);
     };
 
     r.insertCell().appendChild(n);
@@ -164,7 +158,7 @@ function renderSectionSetup(){
 
 function addSection(){
   sections.push({name:"New Section",distance:0});
-  persist(true);
+  save(true);
 }
 
 function renderSectionDropdown(){
@@ -178,7 +172,6 @@ function renderSectionDropdown(){
   sectionSelect.value=activeSection;
   sectionSelect.onchange=()=>{
     activeSection=parseInt(sectionSelect.value);
-    drawPaths();
   };
 }
 
@@ -186,7 +179,6 @@ function renderSectionDropdown(){
 function startRun(){
   if(running) return;
   running=true;
-  currentPath=[];
   startTime=performance.now();
   timerInterval=setInterval(()=>{
     timer.textContent=
@@ -206,12 +198,8 @@ function stopRun(){
   if(!Array.isArray(runs[m][activeSection]))
     runs[m][activeSection]=[];
 
-  runs[m][activeSection].push({
-    time:t,
-    path:[...currentPath]
-  });
-
-  persist();
+  runs[m][activeSection].push(t);
+  save();
 }
 
 /* ===== RESULTS ===== */
@@ -224,15 +212,14 @@ function renderResults(){
     r.insertCell().textContent=s.name;
 
     const data=runs[m][i]||[];
-    if(data.length===0){
+    if(!data.length){
       r.insertCell().textContent="—";
       r.insertCell().textContent="—";
       r.insertCell().textContent="—";
       r.insertCell().textContent="—";
-    }else{
-      const times=data.map(x=>x.time).filter(Number.isFinite);
-      const best=Math.min(...times);
-      const cur=times[times.length-1];
+    } else {
+      const best=Math.min(...data);
+      const cur=data[data.length-1];
 
       r.insertCell().textContent=best.toFixed(2);
       r.insertCell().textContent=cur.toFixed(2);
@@ -241,7 +228,7 @@ function renderResults(){
       dCell.textContent=(cur-best).toFixed(2);
       dCell.className=cur<=best?"good":"bad";
 
-      const dist=Number.isFinite(s.distance)?s.distance:0;
+      const dist=s.distance||0;
       r.insertCell().textContent=
         dist>0?((dist*3600)/cur).toFixed(2)+" mph":"—";
     }
@@ -250,7 +237,7 @@ function renderResults(){
     del.textContent="🗑";
     del.onclick=()=>{
       if(data.length) data.pop();
-      persist();
+      save();
     };
     r.insertCell().appendChild(del);
   });
@@ -260,57 +247,49 @@ function renderResults(){
 const ctx=fieldCanvas.getContext("2d");
 
 fieldCanvas.addEventListener("mousedown",e=>{
-  if(!running) return;
-  drawing=true;
-  addPoint(e);
+  const r=fieldCanvas.getBoundingClientRect();
+  currentPath=[{x:e.clientX-r.left,y:e.clientY-r.top}];
+  paths.push(currentPath);
 });
 
 fieldCanvas.addEventListener("mousemove",e=>{
-  if(!drawing) return;
-  addPoint(e);
+  if(!currentPath) return;
+  const r=fieldCanvas.getBoundingClientRect();
+  currentPath.push({x:e.clientX-r.left,y:e.clientY-r.top});
   drawPaths();
 });
 
-fieldCanvas.addEventListener("mouseup",()=>drawing=false);
-fieldCanvas.addEventListener("mouseleave",()=>drawing=false);
-
-function addPoint(e){
-  const r=fieldCanvas.getBoundingClientRect();
-  currentPath.push({
-    x:e.clientX-r.left,
-    y:e.clientY-r.top
-  });
-}
+fieldCanvas.addEventListener("mouseup",()=>{
+  currentPath=null;
+  save();
+});
 
 function drawPaths(){
   ctx.clearRect(0,0,900,900);
-  const m=mode.value;
-  const data=runs[m][activeSection]||[];
-
   ctx.lineWidth=3;
   ctx.font="18px Arial";
+  ctx.fillStyle="red";
 
-  data.forEach((run,i)=>{
+  paths.forEach((p,i)=>{
     ctx.beginPath();
-    run.path.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
-    ctx.strokeStyle="gray";
-    ctx.stroke();
-    if(run.path.length)
-      ctx.fillText(i+1,run.path[0].x+5,run.path[0].y-5);
-  });
-
-  if(currentPath.length){
-    ctx.beginPath();
-    currentPath.forEach((p,j)=>j?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+    p.forEach((pt,j)=>j?ctx.lineTo(pt.x,pt.y):ctx.moveTo(pt.x,pt.y));
     ctx.strokeStyle="blue";
     ctx.stroke();
-  }
+    if(p.length)
+      ctx.fillText(i+1,p[0].x+5,p[0].y-5);
+  });
+}
+
+function clearPaths(){
+  paths=[];
+  save();
 }
 
 /* ===== SAVE ===== */
-function persist(rebuild=false){
+function save(rebuild=false){
   localStorage.setItem("sections",JSON.stringify(sections));
   localStorage.setItem("runs",JSON.stringify(runs));
+  localStorage.setItem("paths",JSON.stringify(paths));
   renderSectionSetup();
   if(rebuild) renderSectionDropdown();
   renderResults();
