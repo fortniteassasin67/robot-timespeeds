@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Bezier Path Planner</title>
+
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; }
+canvas { border: 1px solid #aaa; cursor: crosshair; }
+button { margin-top: 10px; padding: 6px 12px; }
+</style>
+</head>
+
+<body>
+
+<h2>Bezier Path Planner (ZED-style)</h2>
+<p>Click to add points. Drag points or handles to curve the path.</p>
+
+<canvas id="canvas" width="900" height="900"></canvas><br>
+<button onclick="clearPath()">Clear Path</button>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const POINT_RADIUS = 6;
+const HANDLE_RADIUS = 4;
+
+let points = [];
+let dragging = null;
+
+/* ===== DATA STRUCTURE =====
+point = {
+  x, y,
+  h1: {x,y},   // incoming handle
+  h2: {x,y}    // outgoing handle
+}
+*/
+
+/* ===== MOUSE HANDLING ===== */
+canvas.addEventListener("mousedown", e => {
+  const p = getMouse(e);
+
+  dragging = findHit(p);
+  if (dragging) return;
+
+  addPoint(p.x, p.y);
+});
+
+canvas.addEventListener("mousemove", e => {
+  if (!dragging) return;
+  const p = getMouse(e);
+  dragging.obj.x = p.x;
+  dragging.obj.y = p.y;
+  draw();
+});
+
+canvas.addEventListener("mouseup", () => dragging = null);
+canvas.addEventListener("mouseleave", () => dragging = null);
+
+/* ===== CORE FUNCTIONS ===== */
+function addPoint(x, y) {
+  const offset = 60;
+  points.push({
+    x, y,
+    h1: { x: x - offset, y },
+    h2: { x: x + offset, y }
+  });
+  draw();
+}
+
+function clearPath() {
+  points = [];
+  draw();
+}
+
+/* ===== DRAWING ===== */
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  drawBezierPath();
+  drawHandles();
+  drawPoints();
+}
+
+function drawBezierPath() {
+  if (points.length < 2) return;
+
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "blue";
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+
+  for (let i=1; i<points.length; i++) {
+    const p0 = points[i-1];
+    const p1 = points[i];
+    ctx.bezierCurveTo(
+      p0.h2.x, p0.h2.y,
+      p1.h1.x, p1.h1.y,
+      p1.x, p1.y
+    );
+  }
+  ctx.stroke();
+}
+
+function drawPoints() {
+  ctx.fillStyle = "red";
+  ctx.font = "14px Arial";
+
+  points.forEach((p,i)=>{
+    drawCircle(p.x, p.y, POINT_RADIUS);
+    ctx.fillText(i+1, p.x+8, p.y-8);
+  });
+}
+
+function drawHandles() {
+  ctx.strokeStyle = "#888";
+  ctx.lineWidth = 1;
+
+  points.forEach(p=>{
+    // lines
+    ctx.beginPath();
+    ctx.moveTo(p.x,p.y);
+    ctx.lineTo(p.h1.x,p.h1.y);
+    ctx.moveTo(p.x,p.y);
+    ctx.lineTo(p.h2.x,p.h2.y);
+    ctx.stroke();
+
+    // handles
+    ctx.fillStyle="green";
+    drawCircle(p.h1.x,p.h1.y,HANDLE_RADIUS);
+    drawCircle(p.h2.x,p.h2.y,HANDLE_RADIUS);
+  });
+}
+
+/* ===== UTIL ===== */
+function drawCircle(x,y,r){
+  ctx.beginPath();
+  ctx.arc(x,y,r,0,Math.PI*2);
+  ctx.fill();
+}
+
+function getMouse(e){
+  const r=canvas.getBoundingClientRect();
+  return { x:e.clientX-r.left, y:e.clientY-r.top };
+}
+
+function findHit(p){
+  for (const pt of points){
+    if (dist(p,pt) < POINT_RADIUS+2) return {obj:pt};
+    if (dist(p,pt.h1) < HANDLE_RADIUS+2) return {obj:pt.h1};
+    if (dist(p,pt.h2) < HANDLE_RADIUS+2) return {obj:pt.h2};
+  }
+  return null;
+}
+
+function dist(a,b){
+  return Math.hypot(a.x-b.x,a.y-b.y);
+}
+
+draw();
+</script>
+
+</body>
+</html>
