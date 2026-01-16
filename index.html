@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>VEX Timer + Bezier Path Planner</title>
+<title>VEX Timer + Path Planner</title>
 
 <style>
 body { font-family: Arial, sans-serif; padding: 20px; }
@@ -14,7 +14,7 @@ th { background: #eee; }
 .bad { background: #f7c5c5; }
 
 #fieldContainer { position: relative; width: 1050px; height: 1050px; margin-top: 20px; border:1px solid #aaa;}
-#fieldImage { width:100%; height:100%; display:block; pointer-events:none;}
+#fieldImage { width:100%; height:100%; display:block; pointer-events:none; }
 #fieldCanvas { position:absolute; top:0; left:0; cursor:crosshair; }
 
 #autonOutput { width: 100%; height: 150px; margin-top: 10px; font-family: monospace; }
@@ -44,7 +44,7 @@ th { background: #eee; }
 
 <br><br>
 <label>Section:</label>
-<select id="sectionSelect" onchange="draw()"></select>
+<select id="sectionSelect"></select>
 
 <button onclick="startSection()">Start</button>
 <button onclick="stopSection()">Stop</button>
@@ -133,7 +133,7 @@ function renderSectionDropdown(){
 /* ---------- TIMER ---------- */
 function startSection(){
   if(timerInterval) return;
-  activeSection=document.getElementById("sectionSelect").value;
+  const activeSection=document.getElementById("sectionSelect").value;
   startTime=performance.now();
   timerInterval=setInterval(()=>{
     document.getElementById("timer").textContent="Time: "+((performance.now()-startTime)/1000).toFixed(2)+" s";
@@ -145,8 +145,9 @@ function stopSection(){
   clearInterval(timerInterval); timerInterval=null;
   const t=(performance.now()-startTime)/1000;
   const m=document.getElementById("mode").value;
-  runs[m][activeSection]??=[];
-  runs[m][activeSection].push(t);
+  const sec=document.getElementById("sectionSelect").value;
+  runs[m][sec]??=[];
+  runs[m][sec].push(t);
   save();
 }
 
@@ -175,82 +176,61 @@ function renderResults(){
 /* ---------- PATH DRAWING ---------- */
 const canvas=document.getElementById("fieldCanvas");
 const ctx=canvas.getContext("2d");
-const POINT_RADIUS=6, HANDLE_RADIUS=4;
-let dragging=null;
+let drawing=false;
+let currentPath=[];
 
 canvas.addEventListener("mousedown", e=>{
-  const p=getMouse(e);
-  dragging=findHit(p);
-  if (!dragging) addPoint(p.x,p.y);
+  const sec=document.getElementById("sectionSelect").value;
+  paths[sec] ??= [];
+  drawing = true;
+  const p = getMouse(e);
+  currentPath = [p];
+  paths[sec].push(currentPath);
+  draw();
 });
 
 canvas.addEventListener("mousemove", e=>{
-  if(!dragging) return;
-  const p=getMouse(e);
-  dragging.obj.x=p.x; dragging.obj.y=p.y;
+  if(!drawing) return;
+  const p = getMouse(e);
+  currentPath.push(p);
   draw();
 });
 
-canvas.addEventListener("mouseup", ()=>dragging=null);
-canvas.addEventListener("mouseleave", ()=>dragging=null);
+canvas.addEventListener("mouseup", e=>{ drawing=false; });
+canvas.addEventListener("mouseleave", e=>{ drawing=false; });
 
-function addPoint(x,y){
-  const offset=60;
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawPaths();
+}
+
+function drawPaths(){
   const sec=document.getElementById("sectionSelect").value;
-  paths[sec]??=[];
-  paths[sec].push({x,y,h1:{x:x-offset,y},h2:{x:x+offset,y}});
-  draw();
+  const secPaths = paths[sec]||[];
+  ctx.lineWidth=3; ctx.strokeStyle="blue";
+  secPaths.forEach((pArr, idx)=>{
+    if(!pArr.length) return;
+    ctx.beginPath();
+    ctx.moveTo(pArr[0].x, pArr[0].y);
+    for(let i=1;i<pArr.length;i++){
+      ctx.lineTo(pArr[i].x,pArr[i].y);
+    }
+    ctx.stroke();
+    ctx.fillStyle="red"; ctx.font="14px Arial";
+    ctx.fillText(idx+1,pArr[0].x+5,pArr[0].y-5);
+  });
 }
 
 function clearPath(){
   const sec=document.getElementById("sectionSelect").value;
-  paths[sec]=[];
+  paths[sec] = [];
   draw();
 }
 
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawBezierPath();
-  drawHandles();
-  drawPoints();
+function getMouse(e){
+  const r=canvas.getBoundingClientRect();
+  return { x:e.clientX-r.left, y:e.clientY-r.top };
 }
-
-function drawBezierPath(){
-  const sec=document.getElementById("sectionSelect").value;
-  const pts=paths[sec]||[];
-  if(pts.length<2) return;
-  ctx.lineWidth=3; ctx.strokeStyle="blue"; ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for(let i=1;i<pts.length;i++){
-    const p0=pts[i-1], p1=pts[i];
-    ctx.bezierCurveTo(p0.h2.x,p0.h2.y,p1.h1.x,p1.h1.y,p1.x,p1.y);
-  }
-  ctx.stroke();
-}
-
-function drawPoints(){
-  const sec=document.getElementById("sectionSelect").value;
-  const pts=paths[sec]||[];
-  ctx.fillStyle="red"; ctx.font="14px Arial";
-  pts.forEach((p,i)=>{ drawCircle(p.x,p.y,POINT_RADIUS); ctx.fillText(i+1,p.x+8,p.y-8); });
-}
-
-function drawHandles(){
-  const sec=document.getElementById("sectionSelect").value;
-  const pts=paths[sec]||[];
-  ctx.strokeStyle="#888"; ctx.lineWidth=1;
-  pts.forEach(p=>{
-    ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.h1.x,p.h1.y);
-    ctx.moveTo(p.x,p.y); ctx.lineTo(p.h2.x,p.h2.y); ctx.stroke();
-    ctx.fillStyle="green"; drawCircle(p.h1.x,p.h1.y,HANDLE_RADIUS); drawCircle(p.h2.x,p.h2.y,HANDLE_RADIUS);
-  });
-}
-
-function drawCircle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();}
-function getMouse(e){const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
-function findHit(p){ const sec=document.getElementById("sectionSelect").value; const pts=paths[sec]||[]; 
-for(const pt of pts){ if(dist(p,pt)<POINT_RADIUS+2) return {obj:pt}; if(dist(p,pt.h1)<HANDLE_RADIUS+2) return {obj:pt.h1}; if(dist(p,pt.h2)<HANDLE_RADIUS+2) return {obj:pt.h2};} return null;}
-function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 
 /* ---------- AUTON EXPORT ---------- */
 const FIELD_INCHES = 144;
@@ -259,13 +239,15 @@ const PX_PER_INCH = canvas.width/FIELD_INCHES;
 function exportAuton(){
   const lines=[];
   sections.forEach((s,i)=>{
-    const pts=paths[i]||[];
-    if(pts.length<1) return;
+    const secPaths = paths[i]||[];
+    if(secPaths.length<1) return;
     lines.push(`// Section ${i+1}: ${s.name}`);
-    pts.forEach(p=>{
-      const x=(p.x/PX_PER_INCH).toFixed(2);
-      const y=(p.y/PX_PER_INCH).toFixed(2);
-      lines.push(`moveTo(${x}, ${y});`);
+    secPaths.forEach(pArr=>{
+      pArr.forEach(p=>{
+        const x=(p.x/PX_PER_INCH).toFixed(2);
+        const y=(p.y/PX_PER_INCH).toFixed(2);
+        lines.push(`moveTo(${x}, ${y});`);
+      });
     });
   });
   const text=lines.join("\n");
@@ -277,6 +259,5 @@ function exportAuton(){
 /* ---------- INIT ---------- */
 draw();
 </script>
-
 </body>
 </html>
