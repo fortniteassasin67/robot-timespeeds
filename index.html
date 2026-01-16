@@ -44,7 +44,7 @@ th { background: #eee; }
 
 <br><br>
 <label>Section:</label>
-<select id="sectionSelect" onchange="loadPath()"></select>
+<select id="sectionSelect" onchange="draw()"></select>
 
 <button onclick="startSection()">Start</button>
 <button onclick="stopSection()">Stop</button>
@@ -81,13 +81,13 @@ let sections = JSON.parse(localStorage.getItem("sections")) || [{ name:"Start to
 let runs = JSON.parse(localStorage.getItem("runs")) || { driver:{}, auton:{} };
 let paths = JSON.parse(localStorage.getItem("paths")) || {}; // store paths per section
 
-let startTime=null, timerInterval=null, activeSection=null;
+let startTime=null, timerInterval=null;
 
 /* ---------- INIT ---------- */
 renderSectionSetup();
 renderSectionDropdown();
 renderResults();
-loadPath();
+draw();
 
 /* ---------- SECTION SETUP ---------- */
 function renderSectionSetup(){
@@ -118,6 +118,7 @@ function save(){
   renderSectionSetup();
   renderSectionDropdown();
   renderResults();
+  draw();
 }
 
 function renderSectionDropdown(){
@@ -175,27 +176,24 @@ function renderResults(){
 const canvas=document.getElementById("fieldCanvas");
 const ctx=canvas.getContext("2d");
 const POINT_RADIUS=6, HANDLE_RADIUS=4;
-let currentPath=null;
 let dragging=null;
 
-canvas.addEventListener("mousedown",e=>{
+canvas.addEventListener("mousedown", e=>{
   const p=getMouse(e);
   dragging=findHit(p);
-  if(dragging) return;
-  addPoint(p.x,p.y);
+  if (!dragging) addPoint(p.x,p.y);
 });
 
-canvas.addEventListener("mousemove",e=>{
+canvas.addEventListener("mousemove", e=>{
   if(!dragging) return;
   const p=getMouse(e);
   dragging.obj.x=p.x; dragging.obj.y=p.y;
   draw();
 });
 
-canvas.addEventListener("mouseup",()=>dragging=null);
-canvas.addEventListener("mouseleave",()=>dragging=null);
+canvas.addEventListener("mouseup", ()=>dragging=null);
+canvas.addEventListener("mouseleave", ()=>dragging=null);
 
-/* ----- PATH PER SECTION ----- */
 function addPoint(x,y){
   const offset=60;
   const sec=document.getElementById("sectionSelect").value;
@@ -207,10 +205,6 @@ function addPoint(x,y){
 function clearPath(){
   const sec=document.getElementById("sectionSelect").value;
   paths[sec]=[];
-  draw();
-}
-
-function loadPath(){
   draw();
 }
 
@@ -228,7 +222,7 @@ function drawBezierPath(){
   ctx.lineWidth=3; ctx.strokeStyle="blue"; ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   for(let i=1;i<pts.length;i++){
-    const p0=pts[i-1]; const p1=pts[i];
+    const p0=pts[i-1], p1=pts[i];
     ctx.bezierCurveTo(p0.h2.x,p0.h2.y,p1.h1.x,p1.h1.y,p1.x,p1.y);
   }
   ctx.stroke();
@@ -253,13 +247,15 @@ function drawHandles(){
 }
 
 function drawCircle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();}
-
 function getMouse(e){const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
 function findHit(p){ const sec=document.getElementById("sectionSelect").value; const pts=paths[sec]||[]; 
 for(const pt of pts){ if(dist(p,pt)<POINT_RADIUS+2) return {obj:pt}; if(dist(p,pt.h1)<HANDLE_RADIUS+2) return {obj:pt.h1}; if(dist(p,pt.h2)<HANDLE_RADIUS+2) return {obj:pt.h2};} return null;}
 function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 
 /* ---------- AUTON EXPORT ---------- */
+const FIELD_INCHES = 144;
+const PX_PER_INCH = canvas.width/FIELD_INCHES;
+
 function exportAuton(){
   const lines=[];
   sections.forEach((s,i)=>{
@@ -281,5 +277,6 @@ function exportAuton(){
 /* ---------- INIT ---------- */
 draw();
 </script>
+
 </body>
 </html>
