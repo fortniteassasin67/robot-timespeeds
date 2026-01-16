@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Bezier Path Planner</title>
+<title>Bezier Path Planner with Robot</title>
 
 <style>
 body {
@@ -50,24 +50,32 @@ button {
 
 <br>
 <button onclick="clearPath()">Clear Path</button>
+<button onclick="exportAuton()">Export Auton</button>
 
 <script>
+/* ---------- CANVAS & FIELD SETUP ---------- */
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
+/* ---------- ROBOT / FIELD CONFIG ---------- */
+const FIELD_INCHES = 144;
+const FIELD_PIXELS = canvas.width;
+const PX_PER_INCH = FIELD_PIXELS / FIELD_INCHES;
+
+const ROBOT_WIDTH_IN = 18;
+const ROBOT_LENGTH_IN = 18;
+
+/* ---------- PATH CONFIG ---------- */
 const POINT_RADIUS = 6;
 const HANDLE_RADIUS = 4;
-
 let points = [];
 let dragging = null;
 
 /* ===== MOUSE HANDLING ===== */
 canvas.addEventListener("mousedown", e => {
   const p = getMouse(e);
-
   dragging = findHit(p);
   if (dragging) return;
-
   addPoint(p.x, p.y);
 });
 
@@ -82,7 +90,7 @@ canvas.addEventListener("mousemove", e => {
 canvas.addEventListener("mouseup", () => dragging = null);
 canvas.addEventListener("mouseleave", () => dragging = null);
 
-/* ===== CORE ===== */
+/* ---------- CORE FUNCTIONS ---------- */
 function addPoint(x, y) {
   const offset = 60;
   points.push({
@@ -98,17 +106,17 @@ function clearPath() {
   draw();
 }
 
-/* ===== DRAWING ===== */
+/* ---------- DRAWING ---------- */
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBezierPath();
   drawHandles();
   drawPoints();
+  drawRobotOnPath();
 }
 
 function drawBezierPath() {
   if (points.length < 2) return;
-
   ctx.lineWidth = 3;
   ctx.strokeStyle = "blue";
   ctx.beginPath();
@@ -129,7 +137,6 @@ function drawBezierPath() {
 function drawPoints() {
   ctx.fillStyle = "red";
   ctx.font = "14px Arial";
-
   points.forEach((p, i) => {
     drawCircle(p.x, p.y, POINT_RADIUS);
     ctx.fillText(i + 1, p.x + 8, p.y - 8);
@@ -139,7 +146,6 @@ function drawPoints() {
 function drawHandles() {
   ctx.strokeStyle = "#888";
   ctx.lineWidth = 1;
-
   points.forEach(p => {
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
@@ -154,7 +160,30 @@ function drawHandles() {
   });
 }
 
-/* ===== UTIL ===== */
+function drawRobot(x, y, angleRad) {
+  const w = ROBOT_WIDTH_IN * PX_PER_INCH;
+  const h = ROBOT_LENGTH_IN * PX_PER_INCH;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angleRad);
+  ctx.strokeStyle = "orange";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(-w/2, -h/2, w, h);
+  ctx.restore();
+}
+
+function drawRobotOnPath() {
+  if (points.length < 2) return;
+  const p0 = points[points.length - 2];
+  const p1 = points[points.length - 1];
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
+  const angle = Math.atan2(dy, dx);
+  drawRobot(p1.x, p1.y, angle);
+}
+
+/* ---------- UTIL ---------- */
 function drawCircle(x, y, r) {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -163,10 +192,7 @@ function drawCircle(x, y, r) {
 
 function getMouse(e) {
   const r = canvas.getBoundingClientRect();
-  return {
-    x: e.clientX - r.left,
-    y: e.clientY - r.top
-  };
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
 function findHit(p) {
@@ -182,6 +208,25 @@ function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+/* ---------- EXPORT AUTON ---------- */
+function exportAuton() {
+  if (points.length < 2) {
+    alert("Need at least 2 points");
+    return;
+  }
+  const auton = points.map((p, i) => {
+    return {
+      index: i + 1,
+      x_in: +(p.x / PX_PER_INCH).toFixed(2),
+      y_in: +(p.y / PX_PER_INCH).toFixed(2)
+    };
+  });
+  const text = auton.map(p => `moveTo(${p.x_in}, ${p.y_in});`).join("\n");
+  navigator.clipboard.writeText(text);
+  alert("Auton path copied to clipboard");
+}
+
+/* ---------- INIT ---------- */
 draw();
 </script>
 
