@@ -12,8 +12,8 @@ body {
 
 #fieldContainer {
   position: relative;
-  width: 900px;
-  height: 900px;
+  width: 1050px;
+  height: 1050px;
   border: 1px solid #aaa;
 }
 
@@ -45,7 +45,7 @@ button {
 
 <div id="fieldContainer">
   <img id="fieldImage" src="field.png">
-  <canvas id="canvas" width="900" height="900"></canvas>
+  <canvas id="canvas" width="1050" height="1050"></canvas>
 </div>
 
 <br>
@@ -60,14 +60,6 @@ const HANDLE_RADIUS = 4;
 
 let points = [];
 let dragging = null;
-
-/* ===== DATA STRUCTURE =====
-point = {
-  x, y,
-  h1: {x,y},
-  h2: {x,y}
-}
-*/
 
 /* ===== MOUSE HANDLING ===== */
 canvas.addEventListener("mousedown", e => {
@@ -90,7 +82,7 @@ canvas.addEventListener("mousemove", e => {
 canvas.addEventListener("mouseup", () => dragging = null);
 canvas.addEventListener("mouseleave", () => dragging = null);
 
-/* ===== CORE FUNCTIONS ===== */
+/* ===== CORE ===== */
 function addPoint(x, y) {
   const offset = 60;
   points.push({
